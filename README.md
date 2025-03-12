@@ -11,6 +11,12 @@ I also strongly recommend to take a look at this repository: <https://github.com
 
 This version mostly contains interface changes according to my taste.
 
+- Frequency scale from Volos interface is back! I like it so much.
+- S-meter is smaller and moved to the top.
+- Battery indicator was changed.
+- Brightness now is a number from 1 to 15. It maps to PWM fill values from 255/17 to 255.
+- Sleep timeout can only be now up to 90 seconds. I just wanted to make it two-digit number, so it would nicely fit into menu rectangle.
+
 ## How to build
 
 I'm using Arduino IDE.
