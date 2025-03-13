@@ -213,11 +213,16 @@
 #define vol_offset_y              150    // Volume vertical offset
 #define rds_offset_x               10    // RDS horizontal offset
 #define rds_offset_y              158    // RDS vertical offset
-#define batt_offset_x             288
-#define batt_offset_y               5
-#define batt_width                 24
-#define batt_height                14
-#define batt_padding                3    // Padding between battery outline and charge level inside
+
+#define BATT_OFFSET_X             288
+#define BATT_OFFSET_Y               5
+#define BATT_WIDTH                 24
+#define BATT_HEIGHT                14
+#define BATT_INNER_PADDING          3    // Padding between outer and internal part of icon.
+
+// Right bottom corner of voltage string.
+#define VOLT_OFFSET_X             284
+#define VOLT_OFFSET_Y              12
 
 // Frequency scale triangle
 #define triangle_offset_x         160    // Bottom corner position
@@ -425,9 +430,6 @@ uint32_t tuning_timer = millis();       // Tuning hold off timer.
 bool tuning_flag = false;               // Flag to indicate tuning
 
 // Battery monitoring
-uint16_t adc_read_total = 0;            // Total ADC count
-uint16_t adc_read_avr;                  // Average ADC count = adc_read_total / BATT_ADC_READS
-float adc_volt_avr;                     // Average ADC voltage with correction
 uint8_t batt_soc_state = 255;           // State machine used for battery state of charge (SOC) detection with hysteresis (Default = Illegal state)
 
 // Time
@@ -2449,23 +2451,82 @@ void checkRDS()
   }
 }
 
+/* Reads battery voltage. */
+float getBatteryVoltage() {
+
+  uint16_t acc = 0;
+  for (int i = 0; i < BATT_ADC_READS; i++) {
+    acc += analogRead(VBAT_MON);
+  }
+
+  return acc * BATT_ADC_FACTOR / BATT_ADC_READS / 1000;
+}
+
+/* Draws battery icon
+
+   ┌──────┐
+   │░░░░░░││
+   └──────┘
+
+   Params:
+
+   - `x`, `y`  - coords of top level corner of battery outline 
+   - `w`, `h`  - width and height of battery outline
+   - `p`       - padding between outer and inner part
+   - `charge`  - charge level 0..1
+   - `color`   - icon color
+*/
+void drawBatteryIcon(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t p, float charge, uint16_t color) {
+
+  // Battery outline.
+  spr.drawRoundRect(x, y, w, h, 2, color);
+
+  // Battery plus pin.
+  spr.drawLine(x + w + 2, y + p, x + w + 2, y + h - p, color);
+
+  // Charge level.
+  spr.fillRect(x + p, y + p, (w - p*2) * charge, h - p*2, color);
+}
+
+/* Draw battery voltage (text aligned to right).
+
+   Params:
+
+   - `x`, `y` - coords of bottom right corner.
+   - `voltage`
+*/
+void drawBatteryVoltage(uint16_t x, uint16_t y, float voltage) {
+
+  spr.setTextColor(TFT_WHITE, TFT_BLACK);
+  spr.setTextDatum(MR_DATUM);
+
+  // The hardware has a load sharing circuit to allow simultaneous charge and power.
+  // With USB(5V) connected the voltage reading will be approx. VBUS - Diode Drop = 4.65V.
+  // If the average voltage is greater than 4.3V, show "EXT" on the display.
+  if (voltage > 4.3) {
+    spr.drawString("EXT", x, y, 2);
+  }
+  else {
+    spr.drawFloat(voltage, 2, x-10, y, 2);
+    spr.drawString("V", x, y, 2);
+  }
+
+  spr.setTextColor(TFT_WHITE,TFT_BLACK);
+  spr.setTextDatum(MC_DATUM);
+}
 
 /***************************************************************************************
 ** Function name:           batteryMonitor
 ** Description:             Check Battery Level and Draw to level icon
 ***************************************************************************************/
-// Check Battery Level
 void batteryMonitor() {
 
-  // Read ADC and calculate average
-  adc_read_total = 0;                 // Reset to 0 at start of calculation
-  for (int i = 0; i < 10; i++) {
-    adc_read_total += analogRead(VBAT_MON);
-  }
-  adc_read_avr = (adc_read_total / BATT_ADC_READS);
-
   // Calculated average voltage with correction factor
-  adc_volt_avr = adc_read_avr * BATT_ADC_FACTOR / 1000;
+  float voltage = getBatteryVoltage();
+
+#if DEBUG3_PRINT
+  Serial.print("Battery voltage: "); Serial.print(voltage, 2); Serial.println("V");
+#endif
 
   // State machine
   // SOC (%)      batt_soc_state
@@ -2476,21 +2537,21 @@ void batteryMonitor() {
 
   switch (batt_soc_state) {
   case 0:
-    if      (adc_volt_avr > (BATT_SOC_LEVEL1 + BATT_SOC_HYST_2)) batt_soc_state = 1;   // State 0 > 1
+    if      (voltage > (BATT_SOC_LEVEL1 + BATT_SOC_HYST_2)) batt_soc_state = 1;   // State 0 > 1
     break;
 
   case 1:
-    if      (adc_volt_avr > (BATT_SOC_LEVEL2 + BATT_SOC_HYST_2)) batt_soc_state = 2;   // State 1 > 2
-    else if (adc_volt_avr < (BATT_SOC_LEVEL1 - BATT_SOC_HYST_2)) batt_soc_state = 0;   // State 1 > 0
+    if      (voltage > (BATT_SOC_LEVEL2 + BATT_SOC_HYST_2)) batt_soc_state = 2;   // State 1 > 2
+    else if (voltage < (BATT_SOC_LEVEL1 - BATT_SOC_HYST_2)) batt_soc_state = 0;   // State 1 > 0
     break;
 
   case 2:
-    if      (adc_volt_avr > (BATT_SOC_LEVEL3 + BATT_SOC_HYST_2)) batt_soc_state = 3;   // State 2 > 3
-    else if (adc_volt_avr < (BATT_SOC_LEVEL2 - BATT_SOC_HYST_2)) batt_soc_state = 1;   // State 2 > 1
+    if      (voltage > (BATT_SOC_LEVEL3 + BATT_SOC_HYST_2)) batt_soc_state = 3;   // State 2 > 3
+    else if (voltage < (BATT_SOC_LEVEL2 - BATT_SOC_HYST_2)) batt_soc_state = 1;   // State 2 > 1
     break;
 
   case 3:
-    if      (adc_volt_avr < (BATT_SOC_LEVEL3 - BATT_SOC_HYST_2)) batt_soc_state = 2;   // State 3 > 2
+    if      (voltage < (BATT_SOC_LEVEL3 - BATT_SOC_HYST_2)) batt_soc_state = 2;   // State 3 > 2
     break;
 
   default:
@@ -2498,13 +2559,6 @@ void batteryMonitor() {
     else    batt_soc_state = batt_soc_state;                                           // Keep current state
     break;
   }
-
-  // Debug
-#if DEBUG3_PRINT
-  Serial.print("Info: batteryMonitor() >>> batt_soc_state = "); Serial.print(batt_soc_state); Serial.print(", ");
-  Serial.print("ADC count (average) = "); Serial.print(adc_read_avr); Serial.print(", ");
-  Serial.print("ADC voltage (average) = "); Serial.println(adc_volt_avr);
-#endif
 
   if (!display_on) return;
 
@@ -2526,42 +2580,10 @@ void batteryMonitor() {
     batteryLevelColor=TFT_GREEN;
   }
 
-  // Set display information
-  // Battery outline.
-  spr.drawRoundRect(
-          batt_offset_x, batt_offset_y,
-          batt_width,    batt_height,
-          2,
-          batteryLevelColor);
-  // Battery plus pin.
-  spr.drawLine(
-          batt_offset_x + batt_width + 2, batt_offset_y + 3,
-          batt_offset_x + batt_width + 2, batt_offset_y + batt_height - 3,
-          batteryLevelColor);
+  drawBatteryIcon(BATT_OFFSET_X, BATT_OFFSET_Y, BATT_WIDTH, BATT_HEIGHT,
+                  BATT_INNER_PADDING, (float) (batt_soc_state + 1) / 4, batteryLevelColor);
 
-  // Charge level
-  spr.fillRect(
-          batt_offset_x + batt_padding,                               batt_offset_y + batt_padding,
-          (batt_width - batt_padding * 2) * (batt_soc_state + 1) / 4, batt_height - batt_padding * 2,
-          batteryLevelColor);
-
-  spr.setTextColor(TFT_WHITE, TFT_BLACK);
-  spr.setTextDatum(ML_DATUM);
-
-  // The hardware has a load sharing circuit to allow simultaneous charge and power
-  // With USB(5V) connected the voltage reading will be approx. VBUS - Diode Drop = 4.65V
-  // If the average voltage is greater than 4.3V, show "EXT" on the display
-  if (adc_volt_avr > 4.3) {
-    spr.drawString("EXT", batt_offset_x - 30, 12, 2);
-  }
-  else {
-    spr.drawFloat(adc_volt_avr, 2, batt_offset_x - 45, 12, 2);
-    spr.drawString("V", batt_offset_x - 13, 12, 2);
-  }
-
-
-  spr.setTextColor(TFT_WHITE,TFT_BLACK);
-  spr.setTextDatum(MC_DATUM);
+  drawBatteryVoltage(VOLT_OFFSET_X, VOLT_OFFSET_Y, voltage);
 }
 
 
@@ -3273,8 +3295,6 @@ void loop()
     Serial.print(remote_volume);                // Volume
     Serial.print(",");
     Serial.print(remote_rssi);                  // RSSI
-    Serial.print(",");
-    Serial.print(adc_read_avr);                 // V_BAT/2 (ADC average value)
     Serial.print(",");
     Serial.println(g_remote_seqnum);            // Sequence number
   }
