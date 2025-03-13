@@ -206,9 +206,12 @@
 #define freq_offset_y              75    // Frequency vertical offset
 #define funit_offset_x            265    // Frequency Unit horizontal offset
 #define funit_offset_y             65    // Frequency Unitvertical offset
-#define mode_offset_x             290    // Mode horizontal offset
-#define mode_offset_y              90    // Mode vertical offset
-#define mode_radius                 8
+
+// Stereo (or mono) mode indicator.
+#define MODE_OFFSET_X             290
+#define MODE_OFFSET_Y              90
+#define MODE_RADIUS                 8
+
 #define vol_offset_x              120    // Volume horizontal offset
 #define vol_offset_y              150    // Volume vertical offset
 #define rds_offset_x               10    // RDS horizontal offset
@@ -2143,7 +2146,18 @@ void drawMenu() {
   }
 }
 
-
+/* Draw stereo indicator. */
+void drawStereoIndicator(uint16_t x, uint16_t y, uint16_t r, uint16_t color_stereo, uint16_t color_mono, boolean stereo) {
+      if (stereo) {
+        // Stereo: two intertwined circles.
+        spr.drawSmoothCircle(x - r/2, y, r, color_stereo, TFT_BLACK);
+        spr.drawSmoothCircle(x + r/2, y, r, color_stereo, TFT_BLACK);
+      }
+      else {
+        // Mono: one white circle.
+        spr.drawSmoothCircle(x, y, r, color_mono, TFT_BLACK);
+      }
+}
 
 // G8PTN: Alternative layout
 void drawSprite()
@@ -2367,15 +2381,7 @@ void drawSprite()
     spr.setTextColor(TFT_WHITE,TFT_BLACK);
 
     if (currentMode == FM) {
-      if (rx.getCurrentPilot()) {
-        // Stereo: two intertwined circles
-        spr.drawSmoothCircle(mode_offset_x - mode_radius/2, mode_offset_y, mode_radius, TFT_RED, TFT_BLACK);
-        spr.drawSmoothCircle(mode_offset_x + mode_radius/2, mode_offset_y, mode_radius, TFT_RED, TFT_BLACK);
-      }
-      else {
-        // Mono: one white circle
-        spr.drawSmoothCircle(mode_offset_x, mode_offset_y, mode_radius, TFT_WHITE, TFT_BLACK);
-      }
+      drawStereoIndicator(MODE_OFFSET_X, MODE_OFFSET_Y, MODE_RADIUS, TFT_RED, TFT_WHITE, rx.getCurrentPilot());
 
       // spr.setTextColor(TFT_MAGENTA,TFT_BLACK);
       /*spr.setTextDatum(ML_DATUM);*/
