@@ -213,8 +213,11 @@
 #define vol_offset_y              150    // Volume vertical offset
 #define rds_offset_x               10    // RDS horizontal offset
 #define rds_offset_y              158    // RDS vertical offset
-#define batt_datum                282    // Battery meter x offset
-#define clock_datum                 6    // Clock x offset
+#define batt_offset_x             288
+#define batt_offset_y               5
+#define batt_width                 24
+#define batt_height                14
+#define batt_padding                3    // Padding between battery outline and charge level inside
 
 // Frequency scale triangle
 #define triangle_offset_x         160    // Bottom corner position
@@ -2147,28 +2150,11 @@ void drawSprite()
   spr.fillSprite(TFT_BLACK);
   spr.setTextColor(TFT_WHITE,TFT_BLACK);
 
-  // Status bar
-  // spr.fillRect(0,0,320,22,TFT_BLUE);
-
   // Time
   // spr.setTextColor(TFT_WHITE,TFT_BLUE);
   // spr.setTextDatum(ML_DATUM);
   // spr.drawString(time_disp,clock_datum,12,2);
   // spr.setTextColor(TFT_WHITE,TFT_BLACK);
-
-  // Screen activity icon
-  // screen_toggle = !screen_toggle;
-  // spr.drawCircle(clock_datum+50,11,6,TFT_WHITE);
-  // if (screen_toggle) spr.fillCircle(clock_datum+50,11,5,TFT_BLACK);
-  // else               spr.fillCircle(clock_datum+50,11,5,TFT_GREEN);
-
-  // EEPROM write request icon
-  // spr.drawCircle(clock_datum+70,11,6,TFT_WHITE);
-  // if (eeprom_wr_flag){
-  //   spr.fillCircle(clock_datum+70,11,5,TFT_RED);
-  //   eeprom_wr_flag = false;
-  // }
-  // else spr.fillCircle(clock_datum+70,11,5,TFT_BLACK);
 
   if (cmdAbout) {
     spr.setTextDatum(TL_DATUM);
@@ -2283,10 +2269,12 @@ void drawSprite()
     }
 
     // S-Meter Scale
-    spr.drawLine(1 + meter_scale_offset_x, meter_scale_offset_y, 5 + meter_scale_offset_x + (15*8), meter_scale_offset_y, TFT_WHITE);
+    spr.drawLine(
+            1 + meter_scale_offset_x,          meter_scale_offset_y,
+            8 + meter_scale_offset_x + (15*8), meter_scale_offset_y, TFT_WHITE);
     spr.setTextColor(TFT_WHITE,TFT_BLACK);
 
-    spr.drawString("S", 1+meter_offset_x, meter_legend_offset_y, 2);
+    spr.drawString("S", 1 + meter_offset_x, meter_legend_offset_y, 2);
 
     for(int i = 0; i < 16; i++) {
       if (i % 2) {
@@ -2526,25 +2514,36 @@ void batteryMonitor() {
   uint16_t batteryLevelColor;
 
   if (batt_soc_state == 0 ) {
-    chargeLevel=7;
     batteryLevelColor=TFT_RED;
   }
   if (batt_soc_state == 1 ) {
-    chargeLevel=14;
     batteryLevelColor=TFT_GREEN;
   }
   if (batt_soc_state == 2 ) {
-    chargeLevel=21;
     batteryLevelColor=TFT_GREEN;
   }
   if (batt_soc_state == 3 ) {
-    chargeLevel=28;
     batteryLevelColor=TFT_GREEN;
   }
 
   // Set display information
-  spr.fillRect(batt_datum, 5, 30, 14, TFT_WHITE);
-  spr.fillRect(batt_datum + 30, 7, 3, 10, TFT_WHITE);
+  // Battery outline.
+  spr.drawRoundRect(
+          batt_offset_x, batt_offset_y,
+          batt_width,    batt_height,
+          2,
+          batteryLevelColor);
+  // Battery plus pin.
+  spr.drawLine(
+          batt_offset_x + batt_width + 2, batt_offset_y + 3,
+          batt_offset_x + batt_width + 2, batt_offset_y + batt_height - 3,
+          batteryLevelColor);
+
+  // Charge level
+  spr.fillRect(
+          batt_offset_x + batt_padding,                               batt_offset_y + batt_padding,
+          (batt_width - batt_padding * 2) * (batt_soc_state + 1) / 4, batt_height - batt_padding * 2,
+          batteryLevelColor);
 
   spr.setTextColor(TFT_WHITE, TFT_BLACK);
   spr.setTextDatum(ML_DATUM);
@@ -2553,24 +2552,16 @@ void batteryMonitor() {
   // With USB(5V) connected the voltage reading will be approx. VBUS - Diode Drop = 4.65V
   // If the average voltage is greater than 4.3V, show "EXT" on the display
   if (adc_volt_avr > 4.3) {
-    /* spr.drawString("EXT", batt_datum - 35, 12, 2); */
-    spr.fillRect(batt_datum + 1, 6, 28, 12, TFT_BLUE);
-    spr.fillTriangle(batt_datum + 6, 11, batt_datum + 16, 11, batt_datum + 16, 8, TFT_YELLOW);
-    spr.fillTriangle(batt_datum + 13, 12, batt_datum + 13, 15, batt_datum + 23, 12, TFT_YELLOW);
+    spr.drawString("EXT", batt_offset_x - 30, 12, 2);
   }
   else {
-    spr.fillRect(batt_datum + 1, 6, 28, 12, TFT_BLACK);
-    spr.fillRect(batt_datum + 1, 6, chargeLevel, 12, batteryLevelColor);
-    spr.drawFloat(adc_volt_avr, 2, batt_datum - 45, 12, 2);
-    spr.drawString("V", batt_datum - 13, 12, 2);
+    spr.drawFloat(adc_volt_avr, 2, batt_offset_x - 45, 12, 2);
+    spr.drawString("V", batt_offset_x - 13, 12, 2);
   }
 
-  // Debug
-  //spr.drawNumber(batt_soc_state,batt_datum - 10,12,2);
 
   spr.setTextColor(TFT_WHITE,TFT_BLACK);
   spr.setTextDatum(MC_DATUM);
-  //spr.pushSprite(0,0);            // G8PTN: Not needed
 }
 
 
