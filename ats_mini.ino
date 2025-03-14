@@ -306,6 +306,7 @@
 #define MENU_BRIGHTNESS   0
 #define MENU_SLEEP        1
 #define MENU_ABOUT        2
+#define MENU_AUTHORS      3
 
 #define TFT_MENU_BACK TFT_BLACK              // 0x01E9
 #define TFT_MENU_HIGHLIGHT_BACK TFT_BLUE
@@ -363,6 +364,7 @@ bool cmdSettings = false;
 bool cmdBrt = false;
 bool cmdSleep = false;
 bool cmdAbout = false;
+bool cmdAuthors = false;
 
 bool fmRDS = false;
 
@@ -436,11 +438,13 @@ bool tuning_flag = false;               // Flag to indicate tuning
 uint8_t batt_soc_state = 255;           // State machine used for battery state of charge (SOC) detection with hysteresis (Default = Illegal state)
 
 // Time
-uint32_t clock_timer = 0;
-uint8_t time_seconds = 0;
-uint8_t time_minutes = 0;
-uint8_t time_hours = 0;
-char time_disp [16];
+uint32_t micros_last = 0;
+uint32_t clock_seconds = 0;
+
+// uint8_t time_seconds = 0;
+// uint8_t time_minutes = 0;
+// uint8_t time_hours = 0;
+// char time_disp [16];
 
 // Remote serial
 #if USE_REMOTE
@@ -497,6 +501,7 @@ const char *settingsMenu[] = {
   "Brightness",
   "Sleep",
   "About",
+  "Authors"
 };
 
 int8_t settingsMenuIdx = MENU_BRIGHTNESS;
@@ -1099,6 +1104,7 @@ void disableCommands()
   cmdBrt = false;
   cmdSleep = false;
   cmdAbout = false;
+  cmdAuthors = false;
 }
 
 /**
@@ -1931,7 +1937,12 @@ void doCurrentSettingsMenuCmd() {
 
   case MENU_ABOUT:
       cmdAbout = true;
-      showAbout();
+      drawSprite();
+      break;
+
+  case MENU_AUTHORS:
+      cmdAuthors = true;
+      drawSprite();
       break;
 
   default:
@@ -2159,6 +2170,83 @@ void drawStereoIndicator(uint16_t x, uint16_t y, uint16_t r, uint16_t color_ster
       }
 }
 
+/* Function to show general info: authors, build version etc */
+void drawInfo(uint16_t x, uint16_t y, char* header, char* strings[]) {
+  spr.setTextDatum(TL_DATUM);
+
+  spr.drawString(header, x, y, 4);
+
+  int i = 0;
+  y += 32;
+  while(strings[i]) {
+    spr.drawString(strings[i], x, y + i*16, 2);
+    i++;
+  }
+
+  spr.setTextDatum(MC_DATUM);
+}
+
+/* Shows information about firmware authors. */
+void drawAuthors(uint16_t x, uint16_t y) {
+
+  char *header = "Authors";
+
+  char *strings[] = {
+    "- PU2CLR (Ricardo Caratti)",
+    "- Volos Projects",
+    "- ralphxavier",
+    "- Synnygold",
+    "- G8PTN (Dave)",
+    "- R9UCL (Max Arnold)",
+    NULL
+  };
+
+  drawInfo(x, y, header, strings);
+}
+
+/* Shows general information about device and firmware. */
+void drawAbout(uint16_t x, uint16_t y) {
+
+  // Uptime: ddddd days, hh:mm
+  // Uptime: hh:mm
+  // Uptime: mm min
+  // Uptime: ss sec
+  char uptime[26];
+  uint32_t d = clock_seconds;
+  
+  uint8_t s = d % 60;
+  d /= 60;
+
+  uint8_t m = d % 60;
+  d /= 60;
+
+  uint8_t h = d % 24;
+  d /= 24;
+
+  if (d == 0) {
+    if (h == 0) {
+      if (m == 0) {
+        sprintf(uptime, "Uptime: %d sec", s);
+      } else {
+        sprintf(uptime, "Uptime: %d min", m);
+      }
+    } else {
+      sprintf(uptime, "Uptime: %02d:%02d", h, m);
+    }
+  } else {
+    sprintf(uptime, "Uptime: %d %s, %02d:%02d", d, (d == 1 ? "day" : "days"), h, m);
+  }
+
+  char *header = "About";
+  char *strings[] = {
+    "Build time: " __DATE__ " " __TIME__,
+    uptime,
+    NULL
+  };
+
+  drawInfo(x, y, header, strings);
+}
+
 // G8PTN: Alternative layout
 void drawSprite()
 {
@@ -2166,21 +2254,10 @@ void drawSprite()
   spr.fillSprite(TFT_BLACK);
   spr.setTextColor(TFT_WHITE,TFT_BLACK);
 
-  // Time
-  // spr.setTextColor(TFT_WHITE,TFT_BLUE);
-  // spr.setTextDatum(ML_DATUM);
-  // spr.drawString(time_disp,clock_datum,12,2);
-  // spr.setTextColor(TFT_WHITE,TFT_BLACK);
-
-  if (cmdAbout) {
-    spr.setTextDatum(TL_DATUM);
-    spr.drawString("ESP32-SI4732 Receiver", menu_offset_x, menu_offset_y + 4, 4);
-    get_fw_ver();
-    spr.drawString(fw_ver, menu_offset_x + 2, menu_offset_y+33, 2);
-    spr.drawString("Authors: PU2CLR (Ricardo Caratti),", menu_offset_x + 2, menu_offset_y+33+16*2, 2);
-    spr.drawString("Volos Projects, ralphxavier, Synnygold,", menu_offset_x + 2, menu_offset_y+33+16*3, 2);
-    spr.drawString("G8PTN (Dave), R9UCL (Max Arnold)", menu_offset_x + 2, menu_offset_y+33+16*4, 2);
-    spr.setTextDatum(MC_DATUM);
+  if (cmdAuthors) {
+    drawAuthors(0, 0);
+  } else if (cmdAbout) {
+    drawAbout(0, 0);
   } else {
     if (currentMode == FM) {
       spr.setTextDatum(MR_DATUM);
@@ -2755,10 +2832,6 @@ void doAbout( uint16_t v ) {
   delay(MIN_ELAPSED_TIME); // waits a little more for releasing the button.
 }
 
-void showAbout() {
-  drawSprite();
-}
-
 void doSleep( uint16_t v ) {
   if ( v == 1) {
     if (currentSleep < SLEEP_MAX)
@@ -2869,27 +2942,12 @@ void button_check() {
   }
 }
 
+/* Tick seconds. */
 void clock_time()
 {
-  if ((micros() - clock_timer) >= 1000000) {
-    clock_timer = micros();
-    time_seconds++;
-    if (time_seconds >= 60) {
-      time_seconds = 0;
-      time_minutes ++;
-
-      if (time_minutes >= 60) {
-        time_minutes = 0;
-        time_hours++;
-
-        if (time_hours >= 24) {
-          time_hours = 0;
-        }
-      }
-    }
-
-    // Format for display HH:MM (24 hour format)
-    sprintf(time_disp, "%2.2d:%2.2d", time_hours, time_minutes);
+  if ((micros() - micros_last) >= 1000000) {
+    micros_last = micros();
+    clock_seconds++;
   }
 }
 
@@ -2964,6 +3022,8 @@ void loop()
     else if (cmdSleep)
       doSleep(encoderCount);
     else if (cmdAbout)
+      doAbout(encoderCount);
+    else if (cmdAuthors)
       doAbout(encoderCount);
 
     // G8PTN: Added SSB tuning
@@ -3093,7 +3153,7 @@ void loop()
       //else if (countClick == 1)
       else if (countClick >= 1)                   // G8PTN: All actions now done on single press
       { // If just one click, you can select the band by rotating the encoder
-        if (isMenuMode() || cmdAbout)
+        if (isMenuMode() || cmdAbout || cmdAuthors)
         {
           disableCommands();
           showStatus();
@@ -3185,7 +3245,7 @@ void loop()
     else if (isMenuMode()) {                     // G8PTN: Removed cmdBand, now part of isMenuMode()
       disableCommands();
       showStatus();
-    } else if (cmdAbout) {
+    } else if (cmdAbout || cmdAuthors) {
       disableCommands();
       showStatus();
     }
