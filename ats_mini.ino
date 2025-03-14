@@ -195,13 +195,13 @@
 #define menu_offset_x              0    // Menu horizontal offset
 #define menu_offset_y              0    // Menu vertical offset
 #define menu_delta_x              10    // Menu width delta
-#define meter_offset_x           100    // Meter horizontal offset
-#define meter_offset_y             2    // Meter vertical offset
-#define meter_height              10    // Meter height
-#define meter_scale_offset_x       meter_offset_x
-#define meter_scale_offset_y       meter_offset_y + meter_height + 5
-#define meter_scale_height         5
-#define meter_legend_offset_y      meter_scale_offset_y + meter_scale_height + 10
+
+// S-meter
+#define METER_OFFSET_X            102    // Meter horizontal offset
+#define METER_OFFSET_Y              4    // Meter vertical offset
+#define METER_SCALE_HEIGHT         10    // Scale height
+#define METER_LEGEND_HEIGHT         5    // Legend height
+
 #define freq_offset_x             260    // Frequency horizontal offset
 #define freq_offset_y              75    // Frequency vertical offset
 #define funit_offset_x            265    // Frequency Unit horizontal offset
@@ -218,7 +218,7 @@
 #define rds_offset_y              158    // RDS vertical offset
 
 #define BATT_OFFSET_X             288
-#define BATT_OFFSET_Y               5
+#define BATT_OFFSET_Y               4
 #define BATT_WIDTH                 24
 #define BATT_HEIGHT                14
 #define BATT_INNER_PADDING          3    // Padding between outer and internal part of icon.
@@ -2247,6 +2247,36 @@ void drawAbout(uint16_t x, uint16_t y) {
   drawInfo(x, y, header, strings);
 }
 
+/* Draw S-meter. */
+void drawSMeter(uint16_t x, uint16_t y, uint16_t meter_h, uint16_t scale_h) {
+
+  // S-Meter
+  for(int i = 0; i < getStrength(); i++) {
+    spr.fillRect(x + (i*8), y, 3, meter_h, i < 10 ? TFT_GREEN : TFT_RED);
+  }
+
+  // S-Meter scale and legend.
+  uint16_t scale_y = y + meter_h + 4;
+  spr.drawLine(x, scale_y, x + 9 + (15*8), scale_y, TFT_WHITE);
+
+  uint16_t legend_y = scale_y + scale_h + 10;
+
+  spr.setTextColor(TFT_WHITE,TFT_BLACK);
+  spr.drawString("S", x, legend_y, 2);
+
+  for(int i = 0; i < 16; i++) {
+    if (i % 2) {
+      spr.drawLine(x + 1 + (i*8), scale_y, x + 1 + (i*8), scale_y + scale_h, TFT_WHITE);
+
+      if (i < 10)
+        spr.drawNumber(i, x + 1 + (i*8), legend_y, 2);
+
+      if (i == 13)
+        spr.drawString("+40", x + 1 + (i*8), legend_y, 2);
+    }
+  }
+}
+
 // G8PTN: Alternative layout
 void drawSprite()
 {
@@ -2354,33 +2384,8 @@ void drawSprite()
     }
 
     // S-Meter
-    for(int i = 0; i < getStrength(); i++) {
-      if (i < 10)
-        spr.fillRect(1+meter_offset_x+(i*8), 1+meter_offset_y, 3, meter_height, TFT_GREEN);
-      else
-        spr.fillRect(1+meter_offset_x+(i*8), 1+meter_offset_y, 3, meter_height, TFT_RED);
-    }
+    drawSMeter(METER_OFFSET_X, METER_OFFSET_Y, METER_SCALE_HEIGHT, METER_LEGEND_HEIGHT);
 
-    // S-Meter Scale
-    spr.drawLine(
-            1 + meter_scale_offset_x,          meter_scale_offset_y,
-            8 + meter_scale_offset_x + (15*8), meter_scale_offset_y, TFT_WHITE);
-    spr.setTextColor(TFT_WHITE,TFT_BLACK);
-
-    spr.drawString("S", 1 + meter_offset_x, meter_legend_offset_y, 2);
-
-    for(int i = 0; i < 16; i++) {
-      if (i % 2) {
-        spr.drawLine(2 + meter_offset_x + (i*8), meter_scale_offset_y, 2 + meter_offset_x + (i*8), meter_scale_offset_y + meter_scale_height, TFT_WHITE);
-
-        if (i < 10)
-          spr.drawNumber(i, 2 + meter_offset_x + (i*8), meter_legend_offset_y, 2);
-
-        if (i == 13)
-          spr.drawString("+40", 2 + meter_offset_x + (i*8), meter_legend_offset_y, 2);
-      }
-    }
-    
     // Frequency scale.
     spr.fillTriangle(
             triangle_offset_x - triangle_width / 2, triangle_offset_y - triangle_height,
