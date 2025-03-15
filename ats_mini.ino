@@ -196,7 +196,7 @@
 #define menu_offset_y              0    // Menu vertical offset
 #define menu_delta_x              10    // Menu width delta
 
-// S-meter
+// S-meter.
 #define METER_OFFSET_X            102    // Meter horizontal offset
 #define METER_OFFSET_Y              4    // Meter vertical offset
 #define METER_SCALE_HEIGHT         10    // Scale height
@@ -244,9 +244,6 @@
 #define freq_medium_line_size     170 - freq_medium_line_offset_y
 #define freq_short_line_offset_y  160
 #define freq_short_line_size      170 - freq_short_line_offset_y
-
-// Number of brightness levels
-#define BRIGHTNESS_LEVELS 15
 
 // Sleep related constants
 #define SLEEP_MAX 90
@@ -333,6 +330,9 @@ const int eeprom_address = 0;         //               EEPROM start address
 const int eeprom_set_address = 256;   //               EEPROM setting base address
 const int eeprom_setp_address = 272;  //               EEPROM setting (per band) base address
 const int eeprom_ver_address = 496;   //               EEPROM version base address
+
+// Luminance table for percieved brightness levels 1..10 (gamma = 2.2).
+const uint8_t luminance[] = {1, 7, 18, 33, 55, 82, 116, 156, 202, 255};
 
 long storeTime = millis();
 bool itIsTimeToSave = false;
@@ -855,6 +855,7 @@ void setup()
     readAllReceiverInformation();                        // Load EEPROM values
   }
   else {
+    currentBrt = sizeof luminance;
     saveAllReceiverInformation();                        // Set EEPROM to defaults
     rx.setVolume(volume);                                // Set initial volume after EEPROM reset
     setBrightness(currentBrt);                           // Set initial brightness after EEPROM reset
@@ -1220,11 +1221,11 @@ void showSoftMute()
   drawSprite();
 }
 
-/**
- *   Sets brightness
- */
+/* Sets brightness using precalculates luminance table. */
 void setBrightness(uint8_t brt) {
-  ledcWrite(0, brt * 0xFF / BRIGHTNESS_LEVELS);
+
+  ledcWrite(0, luminance[brt-1]);
+
 }
 
 /**
@@ -2277,6 +2278,78 @@ void drawSMeter(uint16_t x, uint16_t y, uint16_t meter_h, uint16_t scale_h) {
   }
 }
 
+/* Draws visor (triangle and line). */
+void drawVisor(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t scale_h, uint16_t color) {
+  // Visor. Draw two triangles and two lines side-by-side (visor will be 2px width).
+  for (int d = 0; d <= 1; d++) {
+    spr.fillTriangle(x - w/2 + d, y - h, x + d,  y, x + w/2 + d, y - h, color);
+  }
+  spr.drawRect(x, y, 2, scale_h, color);
+}
+
+/* Draws frequency scale.
+
+                V
+ 99.0      100.0║    101.0
+   │         │  ║      │
+   │    │    │  ║ │    │
+   │││││││││││││║│││││││
+
+  Params:
+
+  - Visor position:
+    - `vis_x`, `vis_y` - visor line top (bottom corner of visor triangle)
+    - `vis_w`, `vis_h` - width and height of visor triangle ("V" on a diagram)
+    - `vis_h` - visor line length
+  - Scale params:
+    - `sh`, `mh`, `lh` - lengths of short, medium and long scale lines
+
+*/
+void drawFrequencyScale(
+    uInt16_t vis_x, uint16_t vis_y, uint16_t vis_w, uint16_t vis_h, uint16_t scale_h,
+    uint16_t short_line_h, uint16_t medium_line_h, uint16_t long_line_h,
+    uint16_t step) {
+
+  drawVisor(vis_x, vis_y, vis_w, vis_h, scale_h, TFT_RED);
+
+  int temp = (currentFrequency/10.00) - 20;
+  uint16_t lineColor;
+
+  // Bottom of the scale.
+  uint16_t y = vis_y + scale_h;
+
+  for(int i = 0; i < 40; i++)
+  {
+    if (i == 20)
+      lineColor = TFT_RED;
+    else
+      lineColor = 0xC638;
+
+    if (!(temp < band[bandIdx].minimumFreq/10.00 or temp > band[bandIdx].maximumFreq/10.00)) {
+      if(temp % 10 == 0) {
+
+        spr.drawRect(i*8, y - long_line_h, 2, long_line_h, lineColor);
+
+        if (currentMode == FM)
+          spr.drawFloat(temp/10.0, 1, i*8, freq_scale_num_offset_y, 2);
+        else if (temp >= 100)
+          spr.drawFloat(temp/100.0, 3, i*8, freq_scale_num_offset_y, 2);
+        else
+          spr.drawNumber(temp*10, i*8, freq_scale_num_offset_y, 2);
+
+      } else if(temp % 5 == 0) {
+
+        spr.drawRect(i*8, y - medium_line_h, 2, medium_line_h, lineColor);
+
+      } else {
+        spr.drawLine(i*8 + 1, y, i*8 + 1, y - short_line_h, lineColor);
+      }
+    }
+
+    temp = temp + 1;
+  }
+}
+
 // G8PTN: Alternative layout
 void drawSprite()
 {
@@ -2383,82 +2456,11 @@ void drawSprite()
       spr.setTextDatum(MC_DATUM);
     }
 
-    // S-Meter
     drawSMeter(METER_OFFSET_X, METER_OFFSET_Y, METER_SCALE_HEIGHT, METER_LEGEND_HEIGHT);
 
-    // Frequency scale.
-    spr.fillTriangle(
-            triangle_offset_x - triangle_width / 2, triangle_offset_y - triangle_height,
-            triangle_offset_x,                      triangle_offset_y,
-            triangle_offset_x + triangle_width / 2, triangle_offset_y - triangle_height, TFT_RED);
-
-    spr.fillTriangle(
-            triangle_offset_x + 1 - triangle_width / 2, triangle_offset_y - triangle_height,
-            triangle_offset_x + 1,                      triangle_offset_y,
-            triangle_offset_x + 1 + triangle_width / 2, triangle_offset_y - triangle_height, TFT_RED);
-
-    spr.drawLine(
-            triangle_line_offset_x, triangle_line_offset_y,
-            triangle_line_offset_x, triangle_line_offset_y + triangle_line_size, TFT_RED);
-
-    spr.drawLine(
-            triangle_line_offset_x + 1, triangle_line_offset_y,
-            triangle_line_offset_x + 1, triangle_line_offset_y + triangle_line_size, TFT_RED);
-
-    int temp = (currentFrequency/10.00) - 20;
-    uint16_t lineColor;
-
-    for(int i = 0; i < 40; i++)
-    {
-      if (i == 20)
-        lineColor = TFT_RED;
-      else
-        lineColor = 0xC638;
-
-      if (!(temp < band[bandIdx].minimumFreq/10.00 or temp > band[bandIdx].maximumFreq/10.00)) {
-        if((temp % 10) == 0) {
-
-          spr.drawLine(
-                  i*8, freq_long_line_offset_y + freq_long_line_size,
-                  i*8, freq_long_line_offset_y,
-                  lineColor);
-
-          spr.drawLine(
-                  (i*8) + 1, freq_long_line_offset_y + freq_long_line_size,
-                  (i*8) + 1, freq_long_line_offset_y,
-                  lineColor);
-
-          if (currentMode == FM)
-            spr.drawFloat(temp/10.0, 1, i*8, freq_scale_num_offset_y, 2);
-          else if (temp >= 100)
-            spr.drawFloat(temp/100.0, 3, i*8, freq_scale_num_offset_y, 2);
-          else
-            spr.drawNumber(temp*10, i*8, freq_scale_num_offset_y, 2);
-
-        } else if((temp % 5) == 0 && (temp % 10) != 0) {
-
-          spr.drawLine(
-                  i*8, freq_medium_line_offset_y + freq_medium_line_size,
-                  i*8, freq_medium_line_offset_y,
-                  lineColor);
-
-          spr.drawLine(
-                  i*8 + 1, freq_medium_line_offset_y + freq_medium_line_size,
-                  i*8 + 1, freq_medium_line_offset_y,
-                  lineColor);
-
-        } else {
-
-          spr.drawLine(
-                  i*8 + 1, freq_short_line_offset_y + freq_short_line_size,
-                  i*8 + 1, freq_short_line_offset_y,
-                  lineColor);
-
-        }
-      }
-    
-      temp = temp + 1;
-    }
+    drawFrequencyScale(
+        triangle_offset_x, triangle_offset_y, triangle_width, triangle_height, triangle_line_size,
+        freq_short_line_size, freq_medium_line_size, freq_long_line_size, 0);
 
     spr.setTextColor(TFT_WHITE,TFT_BLACK);
 
@@ -2813,7 +2815,7 @@ drawSprite();
 
 void doBrt( uint16_t v ) {
   if (v == 1) {
-    if (currentBrt < BRIGHTNESS_LEVELS)
+    if (currentBrt < sizeof luminance)
         currentBrt++;
   }
   else {
