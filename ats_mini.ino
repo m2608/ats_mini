@@ -185,10 +185,14 @@
 #define DEBUG4_PRINT 0        // Lowest level  - EEPROM
 
 // Remote Control
-#define USE_REMOTE 1          // Allows basic serial control and monitoring
+#define USE_REMOTE 0          // Allows basic serial control and monitoring
 
 // Tune hold off enable (0 = Disable, 1 = Enable)
 #define TUNE_HOLDOFF 1        // Whilst tuning holds off display update
+
+// Number of brightness levels and gamma.
+#define BRIGHTNESS_MAX   10
+#define BRIGHTNESS_GAMMA 2.2
 
 // Display position control
 // Added during development, code could be replaced with fixed values
@@ -228,22 +232,14 @@
 #define VOLT_OFFSET_Y              12
 
 // Frequency scale triangle
-#define triangle_offset_x         160    // Bottom corner position
-#define triangle_offset_y         122
-#define triangle_width              8
-#define triangle_height            12
-#define triangle_line_offset_x    160    // Line position
-#define triangle_line_offset_y    triangle_offset_y
-#define triangle_line_size        170 - triangle_line_offset_y
-#define freq_scale_num_offset_y   130
-
-// Frequency scale lines: long, medium, short
-#define freq_long_line_offset_y   140
-#define freq_long_line_size       170 - freq_long_line_offset_y
-#define freq_medium_line_offset_y 150
-#define freq_medium_line_size     170 - freq_medium_line_offset_y
-#define freq_short_line_offset_y  160
-#define freq_short_line_size      170 - freq_short_line_offset_y
+#define VISOR_X         160  // Visor pointer position.
+#define VISOR_Y         122
+#define VISOR_W           8  // Visor pointer width and height.
+#define VISOR_H          12
+#define SCALE_H          48  // Scale height (lines plus labels).
+#define SCALE_LONG       30  // Scale lines sizes.
+#define SCALE_MEDIUM     20
+#define SCALE_SHORT      10
 
 // Sleep related constants
 #define SLEEP_MAX 90
@@ -330,9 +326,6 @@ const int eeprom_address = 0;         //               EEPROM start address
 const int eeprom_set_address = 256;   //               EEPROM setting base address
 const int eeprom_setp_address = 272;  //               EEPROM setting (per band) base address
 const int eeprom_ver_address = 496;   //               EEPROM version base address
-
-// Luminance table for percieved brightness levels 1..10 (gamma = 2.2).
-const uint8_t luminance[] = {1, 7, 18, 33, 55, 82, 116, 156, 202, 255};
 
 long storeTime = millis();
 bool itIsTimeToSave = false;
@@ -424,7 +417,7 @@ uint8_t mute_vol_val = 0;               // Volume level when mute is applied
 
 // Menu options
 int16_t currentCAL = 0;                 // Calibration offset, +/- 1000Hz in steps of 10Hz
-uint8_t currentBrt = 7;                 // Display brightness, range = 32 to 255 in steps of 32
+uint8_t currentBrt = BRIGHTNESS_MAX;    // Set maximum brightness after reset.
 int8_t currentAVC = 48;                 // Selected AVC, range = 12 to 90 in steps of 2
 uint8_t currentSleep = 0;               // Display sleep timeout, range = 0 to 255 in steps of 5
 long elapsedSleep = millis();           // Display sleep timer
@@ -855,7 +848,6 @@ void setup()
     readAllReceiverInformation();                        // Load EEPROM values
   }
   else {
-    currentBrt = sizeof luminance;
     saveAllReceiverInformation();                        // Set EEPROM to defaults
     rx.setVolume(volume);                                // Set initial volume after EEPROM reset
     setBrightness(currentBrt);                           // Set initial brightness after EEPROM reset
@@ -1221,10 +1213,11 @@ void showSoftMute()
   drawSprite();
 }
 
-/* Sets brightness using precalculates luminance table. */
+/* Sets brightness using gamma curve. */
 void setBrightness(uint8_t brt) {
 
-  ledcWrite(0, luminance[brt-1]);
+  uint8_t pwm = (uint8_t) (255 * pow(((float) (currentBrt) / BRIGHTNESS_MAX), BRIGHTNESS_GAMMA));
+  ledcWrite(0, pwm);
 
 }
 
@@ -2278,13 +2271,23 @@ void drawSMeter(uint16_t x, uint16_t y, uint16_t meter_h, uint16_t scale_h) {
   }
 }
 
-/* Draws visor (triangle and line). */
-void drawVisor(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t scale_h, uint16_t color) {
-  // Visor. Draw two triangles and two lines side-by-side (visor will be 2px width).
-  for (int d = 0; d <= 1; d++) {
-    spr.fillTriangle(x - w/2 + d, y - h, x + d,  y, x + w/2 + d, y - h, color);
-  }
-  spr.drawRect(x, y, 2, scale_h, color);
+/* Returns current frequency in Hz. */
+uint32_t getFrequency(uint16_t f) {
+  if (currentMode == FM)
+    return f * 10000 + currentBFO;
+
+  return f * 1000 + currentBFO;
+}
+
+/* Returns current step in Hz. */
+uint32_t getFrequencyStep() {
+  if (currentMode == FM)
+    return tabFmStep[currentStepIdx] * 10000;
+
+  if (currentStepIdx < AmTotalSteps)
+    return tabAmStep[currentStepIdx] * 1000;
+
+  return tabAmStep[currentStepIdx];
 }
 
 /* Draws frequency scale.
@@ -2298,56 +2301,61 @@ void drawVisor(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t scale_h,
   Params:
 
   - Visor position:
-    - `vis_x`, `vis_y` - visor line top (bottom corner of visor triangle)
-    - `vis_w`, `vis_h` - width and height of visor triangle ("V" on a diagram)
-    - `vis_h` - visor line length
+    - `vx`, `vy` - visor line top (bottom corner of visor triangle)
+    - `vw`, `vh` - width and height of visor triangle ("V" on a diagram)
   - Scale params:
+    - `scale_h` - scale height
     - `sh`, `mh`, `lh` - lengths of short, medium and long scale lines
+  - Other params:
+    - `visor_color`, `scale_color` - colors
+    - `step` - scale step
 
 */
 void drawFrequencyScale(
-    uInt16_t vis_x, uint16_t vis_y, uint16_t vis_w, uint16_t vis_h, uint16_t scale_h,
-    uint16_t short_line_h, uint16_t medium_line_h, uint16_t long_line_h,
-    uint16_t step) {
+    int16_t vx, int16_t vy, int16_t vw, int16_t vh,
+    int16_t scale_h, int16_t lh, int16_t mh, int16_t sh,
+    uint16_t visor_color, uint16_t scale_color, uint32_t step) {
 
-  drawVisor(vis_x, vis_y, vis_w, vis_h, scale_h, TFT_RED);
+  const int16_t dx = 8;
 
-  int temp = (currentFrequency/10.00) - 20;
-  uint16_t lineColor;
+  uint32_t f = getFrequency(currentFrequency);
+  int16_t sx = dx * (f % step) / step;
+  f = (f / step) * step - step*20;
 
   // Bottom of the scale.
-  uint16_t y = vis_y + scale_h;
+  int16_t bottom = vy + scale_h;
+  int16_t labels_y = (vy + bottom - lh) / 2;
+
+  uint32_t f_bottom = getFrequency(band[bandIdx].minimumFreq);
+  uint32_t f_top = getFrequency(band[bandIdx].maximumFreq);
 
   for(int i = 0; i < 40; i++)
   {
-    if (i == 20)
-      lineColor = TFT_RED;
-    else
-      lineColor = 0xC638;
+    if( f >= f_bottom and f <= f_top) {
 
-    if (!(temp < band[bandIdx].minimumFreq/10.00 or temp > band[bandIdx].maximumFreq/10.00)) {
-      if(temp % 10 == 0) {
-
-        spr.drawRect(i*8, y - long_line_h, 2, long_line_h, lineColor);
-
+      if((f / step) % 10 == 0) {
         if (currentMode == FM)
-          spr.drawFloat(temp/10.0, 1, i*8, freq_scale_num_offset_y, 2);
-        else if (temp >= 100)
-          spr.drawFloat(temp/100.0, 3, i*8, freq_scale_num_offset_y, 2);
+          spr.drawFloat(f / 1e6, 1, i*dx - sx, labels_y, 2);
+        else if (f % 1000 == 0 and step % 100 == 0)
+          spr.drawFloat(f / 1e3, 0, i*dx - sx, labels_y, 2);
         else
-          spr.drawNumber(temp*10, i*8, freq_scale_num_offset_y, 2);
+          spr.drawFloat(f / 1e3, 2, i*dx - sx, labels_y, 2);
 
-      } else if(temp % 5 == 0) {
-
-        spr.drawRect(i*8, y - medium_line_h, 2, medium_line_h, lineColor);
-
-      } else {
-        spr.drawLine(i*8 + 1, y, i*8 + 1, y - short_line_h, lineColor);
-      }
+        spr.drawRect(i*dx - sx, bottom - lh, 2, lh, scale_color);
+      } else if((f / step) % 5 == 0)
+        spr.drawRect(i*dx - sx, bottom - mh, 2, mh, scale_color);
+      else
+        spr.drawLine(i*dx - sx + 1, bottom, i*dx - sx + 1, bottom - sh, scale_color);
     }
-
-    temp = temp + 1;
+    f += step;
   }
+
+  // Visor. Draw two triangles and two lines side-by-side (visor will be 2px width).
+  for (int d = 0; d <= 1; d++) {
+    spr.fillTriangle(vx - vw/2 + d, vy - vh, vx + d,  vy, vx + vw/2 + d, vy - vh, visor_color);
+  }
+  // Visor line (2px width).
+  spr.drawRect(vx, vy, 2, scale_h, visor_color);
 }
 
 // G8PTN: Alternative layout
@@ -2459,8 +2467,8 @@ void drawSprite()
     drawSMeter(METER_OFFSET_X, METER_OFFSET_Y, METER_SCALE_HEIGHT, METER_LEGEND_HEIGHT);
 
     drawFrequencyScale(
-        triangle_offset_x, triangle_offset_y, triangle_width, triangle_height, triangle_line_size,
-        freq_short_line_size, freq_medium_line_size, freq_long_line_size, 0);
+        VISOR_X, VISOR_Y, VISOR_W, VISOR_H, SCALE_H, SCALE_LONG, SCALE_MEDIUM, SCALE_SHORT,
+        TFT_RED, 0xC638, currentMode == FM ? 100000 : 10000);
 
     spr.setTextColor(TFT_WHITE,TFT_BLACK);
 
@@ -2815,7 +2823,7 @@ drawSprite();
 
 void doBrt( uint16_t v ) {
   if (v == 1) {
-    if (currentBrt < sizeof luminance)
+    if (currentBrt < BRIGHTNESS_MAX)
         currentBrt++;
   }
   else {
@@ -3331,45 +3339,50 @@ void loop()
     uint8_t remote_rssi = rx.getCurrentRSSI();
 
     // Remote serial
-    Serial.print(app_ver);                      // Firmware version
-    Serial.print(",");
+    Serial.print(band[bandIdx].bandName);
+    Serial.print(" (");
+    Serial.print(bandModeDesc[currentMode]);
+    Serial.print(") freq: ");
+    Serial.print(getFrequency(currentFrequency));
+    Serial.print("Hz, step:");
+    Serial.print(currentMode == FM ? FmStepDesc[currentStepIdx] : AmSsbStepDesc[currentStepIdx]);
 
-    Serial.print(currentFrequency);             // Frequency (KHz)
-    Serial.print(",");
-    Serial.print(currentBFO);                   // Frequency (Hz x 1000)
-    Serial.print(",");
+    /*Serial.print(",");*/
+    /*Serial.print(bwIdxFM);                      // Bandwidth (FM)*/
+    /*Serial.print(",");*/
+    /*Serial.print(bwIdxAM);                      // Bandwidth (AM)*/
+    /*Serial.print(",");*/
+    /*Serial.print(bwIdxSSB);                     // Bandwidth (SSB)*/
+    /*Serial.print(",");*/
+    /*Serial.print(agcIdx);                       // AGC/ATTN (FM/AM/SSB)*/
+    /*Serial.print(",");*/
+    /**/
+    /*Serial.print(cmdBand);                      // Band command mode*/
+    /*Serial.print(",");*/
+    /*Serial.print(cmdMode);                      // Mode command mode*/
+    /*Serial.print(",");*/
+    /*Serial.print(cmdStep);                      // Step command mode*/
+    /*Serial.print(",");*/
+    /*Serial.print(cmdBandwidth);                 // Bandwidth command mode*/
+    /*Serial.print(",");*/
+    /*Serial.print(cmdAgc);                       // AGC/ATTN command mode*/
+    /*Serial.print(",");*/
 
-    Serial.print(bandIdx);                      // Band
-    Serial.print(",");
-    Serial.print(currentMode);                  // Mode
-    Serial.print(",");
-    Serial.print(currentStepIdx);               // Step (FM/AM/SSB)
-    Serial.print(",");
-    Serial.print(bwIdxFM);                      // Bandwidth (FM)
-    Serial.print(",");
-    Serial.print(bwIdxAM);                      // Bandwidth (AM)
-    Serial.print(",");
-    Serial.print(bwIdxSSB);                     // Bandwidth (SSB)
-    Serial.print(",");
-    Serial.print(agcIdx);                       // AGC/ATTN (FM/AM/SSB)
-    Serial.print(",");
+    Serial.print(", vol: ");
+    Serial.print(remote_volume);
 
-    Serial.print(cmdBand);                      // Band command mode
-    Serial.print(",");
-    Serial.print(cmdMode);                      // Mode command mode
-    Serial.print(",");
-    Serial.print(cmdStep);                      // Step command mode
-    Serial.print(",");
-    Serial.print(cmdBandwidth);                 // Bandwidth command mode
-    Serial.print(",");
-    Serial.print(cmdAgc);                       // AGC/ATTN command mode
-    Serial.print(",");
+    Serial.print(", brightness: ");
+    Serial.print(currentBrt);
 
-    Serial.print(remote_volume);                // Volume
-    Serial.print(",");
-    Serial.print(remote_rssi);                  // RSSI
-    Serial.print(",");
-    Serial.println(g_remote_seqnum);            // Sequence number
+    Serial.print(" ");
+    Serial.print(getFrequency(currentFrequency));
+    Serial.print(" / ");
+    Serial.print(getFrequencyStep());
+    /*Serial.print(",");*/
+    /*Serial.print(remote_rssi);                  // RSSI*/
+    /*Serial.print(",");*/
+    /*Serial.println(g_remote_seqnum);            // Sequence number*/
+    Serial.println("");
   }
 
   if (Serial.available() > 0)
