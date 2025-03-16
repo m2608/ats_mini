@@ -2271,12 +2271,12 @@ void drawSMeter(uint16_t x, uint16_t y, uint16_t meter_h, uint16_t scale_h) {
   }
 }
 
-/* Returns current frequency in Hz. */
+/* Returns current frequency (without BFO) in Hz. */
 uint32_t getFrequency(uint16_t f) {
   if (currentMode == FM)
-    return f * 10000 + currentBFO;
+    return f * 10000;
 
-  return f * 1000 + currentBFO;
+  return f * 1000;
 }
 
 /* Returns current step in Hz. */
@@ -2316,36 +2316,47 @@ void drawFrequencyScale(
     int16_t scale_h, int16_t lh, int16_t mh, int16_t sh,
     uint16_t visor_color, uint16_t scale_color, uint32_t step) {
 
+  // Distance between scale lines.
   const int16_t dx = 8;
+  // Number of scale lines.
+  const int16_t n = 50;
 
-  uint32_t f = getFrequency(currentFrequency);
+  uint32_t f = getFrequency(currentFrequency) + currentBFO;
+
+  // Scale shift (if current requency not aligned with the scale).
   int16_t sx = dx * (f % step) / step;
-  f = (f / step) * step - step*20;
+
+  f = (f / step) * step - step * (n / 2);
 
   // Bottom of the scale.
-  int16_t bottom = vy + scale_h;
-  int16_t labels_y = (vy + bottom - lh) / 2;
+  int16_t yy = vy + scale_h;
 
-  uint32_t f_bottom = getFrequency(band[bandIdx].minimumFreq);
-  uint32_t f_top = getFrequency(band[bandIdx].maximumFreq);
+  // Leftmost point of the scale (could be out of the screen).
+  int16_t xx = vx - (n / 2)*dx - sx;
 
-  for(int i = 0; i < 40; i++)
+  // Labels position.
+  int16_t labels_y = (vy + yy - lh) / 2;
+
+  uint32_t f_min = getFrequency(band[bandIdx].minimumFreq);
+  uint32_t f_max = getFrequency(band[bandIdx].maximumFreq);
+
+  for(int i = 0; i < n; i++)
   {
-    if( f >= f_bottom and f <= f_top) {
+    if( f >= f_min and f <= f_max) {
 
       if((f / step) % 10 == 0) {
         if (currentMode == FM)
-          spr.drawFloat(f / 1e6, 1, i*dx - sx, labels_y, 2);
+          spr.drawFloat(f / 1e6, 1, xx + i*dx , labels_y, 2);
         else if (f % 1000 == 0 and step % 100 == 0)
-          spr.drawFloat(f / 1e3, 0, i*dx - sx, labels_y, 2);
+          spr.drawFloat(f / 1e3, 0, xx + i*dx , labels_y, 2);
         else
-          spr.drawFloat(f / 1e3, 2, i*dx - sx, labels_y, 2);
+          spr.drawFloat(f / 1e3, 2, xx + i*dx , labels_y, 2);
 
-        spr.drawRect(i*dx - sx, bottom - lh, 2, lh, scale_color);
+        spr.drawRect(xx + i*dx , yy - lh, 2, lh, scale_color);
       } else if((f / step) % 5 == 0)
-        spr.drawRect(i*dx - sx, bottom - mh, 2, mh, scale_color);
+        spr.drawRect(xx + i*dx , yy - mh, 2, mh, scale_color);
       else
-        spr.drawLine(i*dx - sx + 1, bottom, i*dx - sx + 1, bottom - sh, scale_color);
+        spr.drawLine(xx + i*dx  + 1, yy, xx + i*dx  + 1, yy - sh, scale_color);
     }
     f += step;
   }
@@ -3343,7 +3354,7 @@ void loop()
     Serial.print(" (");
     Serial.print(bandModeDesc[currentMode]);
     Serial.print(") freq: ");
-    Serial.print(getFrequency(currentFrequency));
+    Serial.print(getFrequency(currentFrequency) + currentBFO);
     Serial.print("Hz, step:");
     Serial.print(currentMode == FM ? FmStepDesc[currentStepIdx] : AmSsbStepDesc[currentStepIdx]);
 
@@ -3374,10 +3385,6 @@ void loop()
     Serial.print(", brightness: ");
     Serial.print(currentBrt);
 
-    Serial.print(" ");
-    Serial.print(getFrequency(currentFrequency));
-    Serial.print(" / ");
-    Serial.print(getFrequencyStep());
     /*Serial.print(",");*/
     /*Serial.print(remote_rssi);                  // RSSI*/
     /*Serial.print(",");*/
