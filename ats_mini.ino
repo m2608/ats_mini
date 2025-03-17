@@ -190,15 +190,11 @@
 // Tune hold off enable (0 = Disable, 1 = Enable)
 #define TUNE_HOLDOFF 1        // Whilst tuning holds off display update
 
-// Number of brightness levels and gamma.
-#define BRIGHTNESS_MAX   10
-#define BRIGHTNESS_GAMMA 2.2
-
 // Display position control
 // Added during development, code could be replaced with fixed values
-#define menu_offset_x              0    // Menu horizontal offset
-#define menu_offset_y              0    // Menu vertical offset
-#define menu_delta_x              10    // Menu width delta
+#define menu_offset_x               0    // Menu horizontal offset
+#define menu_offset_y               0    // Menu vertical offset
+#define menu_delta_x               10    // Menu width delta
 
 // S-meter.
 #define METER_OFFSET_X            102    // Meter horizontal offset
@@ -216,8 +212,6 @@
 #define MODE_OFFSET_Y              90
 #define MODE_RADIUS                 8
 
-#define vol_offset_x              120    // Volume horizontal offset
-#define vol_offset_y              150    // Volume vertical offset
 #define rds_offset_x               10    // RDS horizontal offset
 #define rds_offset_y              158    // RDS vertical offset
 
@@ -232,14 +226,14 @@
 #define VOLT_OFFSET_Y              12
 
 // Frequency scale triangle
-#define VISOR_X         160  // Visor pointer position.
-#define VISOR_Y         122
-#define VISOR_W           8  // Visor pointer width and height.
-#define VISOR_H          12
-#define SCALE_H          48  // Scale height (lines plus labels).
-#define SCALE_LONG       30  // Scale lines sizes.
-#define SCALE_MEDIUM     20
-#define SCALE_SHORT      10
+#define VISOR_X                   160  // Visor pointer position.
+#define VISOR_Y                   122
+#define VISOR_W                     8  // Visor pointer width and height.
+#define VISOR_H                    12
+#define SCALE_H                    48  // Scale height (lines plus labels).
+#define SCALE_LONG                 30  // Scale lines sizes.
+#define SCALE_MEDIUM               20
+#define SCALE_SHORT                10
 
 // Sleep related constants
 #define SLEEP_MAX 90
@@ -258,7 +252,6 @@
 #define MIN_ELAPSED_RSSI_TIME  200  // RSSI check uses IN_ELAPSED_RSSI_TIME * 6 = 1.2s
 #define ELAPSED_COMMAND      10000  // time to turn off the last command controlled by encoder. Time to goes back to the VFO control // G8PTN: Increased time and corrected comment
 #define ELAPSED_CLICK         1500  // time to check the double click commands
-#define DEFAULT_VOLUME          35  // change it for your favorite sound volume
 #define STRENGTH_CHECK_TIME   1500  // Not used
 #define RDS_CHECK_TIME         250  // Increased from 90
 
@@ -307,6 +300,31 @@
 #define EEPROM_SIZE     512
 #define STORE_TIME    10000                  // Time of inactivity to make the current receiver status writable (10s)
 
+// Default volume after reset.
+#define VOLUME_DEFAULT             35
+
+// Number of brightness levels and gamma.
+#define BRIGHTNESS_MAX             10
+#define BRIGHTNESS_GAMMA          2.2
+
+// Default display turn off timer (0 - do not turn off display).
+#define SLEEP_DEFAULT               0
+
+// AVC after reset.
+#define AVC_DEFAULT                48
+
+// Calibration after reset.
+#define CALIBRATION_DEFAULT         0
+
+// Default band.
+#define BAND_DEFAULT                0
+
+// Default mode.
+#define MODE_DEFAULT			   FM
+
+// Default BFO.
+#define BFO_DEFAULT                 0
+
 // =================================
 // CONSTANTS AND VARIABLES
 // =================================
@@ -319,13 +337,16 @@ const uint16_t size_content = sizeof ssb_patch_content; // see patch_init.h
 // ====================================================================================================================================================
 // Update F/W version comment as required   F/W VER    Function                                                           Locn (dec)            Bytes
 // ====================================================================================================================================================
-const uint8_t  app_id  = 66;          //               EEPROM ID.  If EEPROM read value mismatch, reset EEPROM            eeprom_address        1
-const uint16_t app_ver = 102;         //     v1.01     EEPROM VER. If EEPROM read value mismatch (older), reset EEPROM    eeprom_ver_address    2
-char app_date[] = "2025-03-09";
-const int eeprom_address = 0;         //               EEPROM start address
-const int eeprom_set_address = 256;   //               EEPROM setting base address
-const int eeprom_setp_address = 272;  //               EEPROM setting (per band) base address
-const int eeprom_ver_address = 496;   //               EEPROM version base address
+typedef struct {
+  uint8_t id;
+  uint16_t version;
+} Application;
+
+// EEPROM id and application version. If values in EEPROM differ from values in code, EEPROM should be resetted.
+Application application = {
+  0x55,
+  103    // v1.03.
+};
 
 long storeTime = millis();
 bool itIsTimeToSave = false;
@@ -333,7 +354,6 @@ bool itIsTimeToSave = false;
 bool bfoOn = false;
 bool ssbLoaded = false;
 char bfo[18]="0000";
-bool muted = false;
 int8_t agcIdx = 0;
 uint8_t disableAgc = 0;
 int8_t agcNdx = 0;
@@ -359,9 +379,8 @@ bool cmdSleep = false;
 bool cmdAbout = false;
 bool cmdAuthors = false;
 
-bool fmRDS = false;
 
-int16_t currentBFO = 0;
+int16_t currentBFO = BFO_DEFAULT;
 long elapsedRSSI = millis();
 long elapsedButton = millis();
 
@@ -412,15 +431,37 @@ bool display_on = true;                 // Display state
 bool screen_toggle = false;             // Toggle when drawsprite is called
 bool eeprom_wr_flag = false;            // Flag indicating EEPROM write request
 
-// Firmware controlled mute
-uint8_t mute_vol_val = 0;               // Volume level when mute is applied
-
 // Menu options
-int16_t currentCAL = 0;                 // Calibration offset, +/- 1000Hz in steps of 10Hz
-uint8_t currentBrt = BRIGHTNESS_MAX;    // Set maximum brightness after reset.
-int8_t currentAVC = 48;                 // Selected AVC, range = 12 to 90 in steps of 2
-uint8_t currentSleep = 0;               // Display sleep timeout, range = 0 to 255 in steps of 5
+int16_t currentCAL = CALIBRATION_DEFAULT;                 // Calibration offset, +/- 1000Hz in steps of 10Hz
+int8_t currentAVC = AVC_DEFAULT;                 // Selected AVC, range = 12 to 90 in steps of 2
 long elapsedSleep = millis();           // Display sleep timer
+
+
+// Settings which are stored to EEPROM.
+typedef struct
+{
+  uint8_t volume;
+  bool mute;
+  uint8_t brightness;
+  uint8_t sleep;
+  uint8_t avc;
+  int16_t calibration;
+  uint8_t band;
+  uint8_t mode;
+  int16_t bfo;
+} Settings;
+
+Settings settings = {
+  VOLUME_DEFAULT,
+  false,                // Mute disabled by default.
+  BRIGHTNESS_MAX,
+  SLEEP_DEFAULT,
+  AVC_DEFAULT,
+  CALIBRATION_DEFAULT,
+  BAND_DEFAULT,
+  MODE_DEFAULT,
+  BFO_DEFAULT
+};
 
 // Background screen refresh
 uint32_t background_timer = millis();   // Background screen refresh timer.
@@ -627,7 +668,7 @@ Band band[] = {
 };
 
 const int lastBand = (sizeof band / sizeof(Band)) - 1;
-int bandIdx = 0;
+int bandIdx = BAND_DEFAULT;
 
 //int tabStep[] = {1, 5, 10, 50, 100, 500, 1000};
 //const int lastStep = (sizeof tabStep / sizeof(int)) - 1;
@@ -650,8 +691,6 @@ char bufferRdsTime[32];
 
 uint8_t rssi = 0;
 uint8_t snr = 0;
-uint8_t volume = DEFAULT_VOLUME;
-
 
 // SSB Mode detection
 bool isSSB()
@@ -711,11 +750,11 @@ SI4735 rx;
 
 char fw_ver [25];
 
-void get_fw_ver() {
-    uint16_t ver_major = (app_ver / 100);
-    uint16_t ver_minor = (app_ver % 100);
-    sprintf(fw_ver, "F/W: v%1.1d.%2.2d %s", ver_major, ver_minor, app_date);
-}
+// void get_fw_ver() {
+//     uint16_t ver_major = (app_ver / 100);
+//     uint16_t ver_minor = (app_ver % 100);
+//     sprintf(fw_ver, "F/W: v%1.1d.%2.2d %s", ver_major, ver_minor, app_date);
+// }
 
 void setup()
 {
@@ -753,7 +792,7 @@ void setup()
   // Note: At brightness levels below 100%, switching from the PWM may cause power spikes and/or RFI
   ledcSetup(0, 16000, 8);           // Port 0, 16kHz, 8-bit
   ledcAttachPin(PIN_LCD_BL, 0);     // Pin assignment
-  setBrightness(currentBrt);
+  setBrightness(settings.brightness);
 
   // EEPROM
   // Note: Use EEPROM.begin(EEPROM_SIZE) before use and EEPROM.begin.end after use to free up memory and avoid memory leaks
@@ -766,10 +805,17 @@ void setup()
 
     tft.setTextSize(2);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    get_fw_ver();
-    tft.println(fw_ver);
-    tft.println();
-    EEPROM.write(eeprom_address, 0);
+
+    // get_fw_ver();
+    // tft.println(fw_ver);
+    // tft.println();
+
+    uint8_t* ptr_application = (uint8_t*)&application;
+    application.id = 0;
+    for (int addr = 0; addr < sizeof application; addr++) {
+        EEPROM.write(addr, ptr_application[addr]);
+    }
+
     EEPROM.commit();
     tft.setTextColor(TFT_RED, TFT_BLACK);
     tft.print("EEPROM Resetting");
@@ -834,24 +880,24 @@ void setup()
   EEPROM.end();
   #endif
 
-  // Perform check against app_id and app_ver
-  uint8_t  id_read;
-  uint16_t ver_read;
+  Application app_eeprom;
 
   EEPROM.begin(EEPROM_SIZE);
-  id_read = EEPROM.read(eeprom_address);
-  ver_read  = EEPROM.read(eeprom_ver_address) << 8;
-  ver_read |= EEPROM.read(eeprom_ver_address + 1);
+
+  uint8_t* ptr_app = (uint8_t*)&app_eeprom;
+  for (int addr = 0; addr < sizeof app_eeprom; addr++) {
+    ptr_app[addr] = EEPROM.read(addr);
+  }
+
   EEPROM.end();
 
-  if ((id_read == app_id) && (ver_read == app_ver)) {
-    readAllReceiverInformation();                        // Load EEPROM values
-  }
-  else {
-    saveAllReceiverInformation();                        // Set EEPROM to defaults
-    rx.setVolume(volume);                                // Set initial volume after EEPROM reset
-    setBrightness(currentBrt);                           // Set initial brightness after EEPROM reset
-  }
+  if (app_eeprom.id == application.id and app_eeprom.version == application.version)
+    readAllReceiverInformation();
+  else
+    saveAllReceiverInformation();
+
+  rx.setVolume(settings.mute ? 0 : settings.volume);
+  setBrightness(settings.brightness);
 
   // Debug
   // Read all EEPROM locations
@@ -905,21 +951,33 @@ void printParam(const char *msg) {
 void saveAllReceiverInformation()
 {
   eeprom_wr_flag = true;
-  int addr_offset;
   int16_t currentBFOs = (currentBFO % 1000);            // G8PTN: For SSB ensures BFO value is valid wrt band[bandIdx].currentFreq = currentFrequency;
 
   EEPROM.begin(EEPROM_SIZE);
 
-  EEPROM.write(eeprom_address, app_id);                 // Stores the app id;
-  EEPROM.write(eeprom_address + 1, rx.getVolume());     // Stores the current Volume
-  EEPROM.write(eeprom_address + 2, bandIdx);            // Stores the current band
-  EEPROM.write(eeprom_address + 3, fmRDS);              // G8PTN: Not used
-  EEPROM.write(eeprom_address + 4, currentMode);        // Stores the current Mode (FM / AM / LSB / USB). Now per mode, leave for compatibility
-  EEPROM.write(eeprom_address + 5, currentBFOs >> 8);   // G8PTN: Stores the current BFO % 1000 (HIGH byte)
-  EEPROM.write(eeprom_address + 6, currentBFOs & 0XFF); // G8PTN: Stores the current BFO % 1000 (LOW byte)
-  EEPROM.commit();
+  int addr_offset = 0;
 
-  addr_offset = 7;
+  // Volume in settings could differ from the actual volume.
+  if (!settings.mute)
+    settings.volume = rx.getVolume();
+
+  uint8_t* ptr_application = (uint8_t*)&application;
+  for (int i = 0; i < sizeof application; i++) {
+    EEPROM.write(addr_offset++, ptr_application[i]);
+  }
+
+  // Save settings struct to EEPROM.
+  uint8_t* ptr_settings = (uint8_t*)&settings;
+  for (int i = 0; i < sizeof settings; i++) {
+    EEPROM.write(addr_offset++, ptr_settings[i]);
+  }
+
+  EEPROM.write(addr_offset++, bandIdx);            // Stores the current band
+  EEPROM.write(addr_offset++, currentMode);        // Stores the current Mode (FM / AM / LSB / USB). Now per mode, leave for compatibility
+  EEPROM.write(addr_offset++, currentBFOs >> 8);   // G8PTN: Stores the current BFO % 1000 (HIGH byte)
+  EEPROM.write(addr_offset++, currentBFOs & 0XFF); // G8PTN: Stores the current BFO % 1000 (LOW byte)
+
+  // EEPROM.commit();
 
   // G8PTN: Commented out the assignment
   // - The line appears to be required to ensure the band[bandIdx].currentFreq = currentFrequency
@@ -934,12 +992,10 @@ void saveAllReceiverInformation()
     EEPROM.write(addr_offset++, (band[i].currentFreq & 0xFF)); // Stores the current Frequency LOW byte for the band
     EEPROM.write(addr_offset++, band[i].currentStepIdx);       // Stores current step of the band
     EEPROM.write(addr_offset++, band[i].bandwidthIdx);         // table index (direct position) of bandwidth
-    EEPROM.commit();
+    // EEPROM.commit();
   }
 
   // G8PTN: Added
-  addr_offset = eeprom_set_address;
-  EEPROM.write(addr_offset++, currentBrt);              // Stores the current Brightness value
   EEPROM.write(addr_offset++, FmAgcIdx);                // Stores the current FM AGC/ATTN index value
   EEPROM.write(addr_offset++, AmAgcIdx);                // Stores the current AM AGC/ATTN index value
   EEPROM.write(addr_offset++, SsbAgcIdx);               // Stores the current SSB AGC/ATTN index value
@@ -947,55 +1003,52 @@ void saveAllReceiverInformation()
   EEPROM.write(addr_offset++, SsbAvcIdx);               // Stores the current SSB AVC index value
   EEPROM.write(addr_offset++, AmSoftMuteIdx);           // Stores the current AM SoftMute index value
   EEPROM.write(addr_offset++, SsbSoftMuteIdx);          // Stores the current SSB SoftMute index value
-  EEPROM.write(addr_offset++, currentSleep);            // Stores the current Sleep value
-  EEPROM.commit();
+  // EEPROM.commit();
 
-  addr_offset = eeprom_setp_address;
   for (int i = 0; i <= lastBand; i++)
   {
     EEPROM.write(addr_offset++, (bandCAL[i] >> 8));     // Stores the current Calibration value (HIGH byte) for the band
     EEPROM.write(addr_offset++, (bandCAL[i] & 0XFF));   // Stores the current Calibration value (LOW byte) for the band
     EEPROM.write(addr_offset++,  bandMODE[i]);          // Stores the current Mode value for the band
-    EEPROM.commit();
+    // EEPROM.commit();
   }
 
-  addr_offset = eeprom_ver_address;
-  EEPROM.write(addr_offset++, app_ver >> 8);            // Stores app_ver (HIGH byte)
-  EEPROM.write(addr_offset++, app_ver & 0XFF);          // Stores app_ver (LOW byte)
   EEPROM.commit();
 
   EEPROM.end();
 }
 
-/**
- * reads the last receiver status from eeprom.
- */
+/* Reads the last receiver status from eeprom. */
 void readAllReceiverInformation()
 {
-  uint8_t volume;
-  int addr_offset;
   int bwIdx;
   EEPROM.begin(EEPROM_SIZE);
 
-  volume = EEPROM.read(eeprom_address + 1); // Gets the stored volume;
-  bandIdx = EEPROM.read(eeprom_address + 2);
-  fmRDS = EEPROM.read(eeprom_address + 3);                // G8PTN: Not used
-  currentMode = EEPROM.read(eeprom_address + 4);          // G8PTM: Reads stored Mode. Now per mode, leave for compatibility
-  currentBFO = EEPROM.read(eeprom_address + 5) << 8;      // G8PTN: Reads stored BFO value (HIGH byte)
-  currentBFO |= EEPROM.read(eeprom_address + 6);          // G8PTN: Reads stored BFO value (HIGH byte)
+  int addr_offset = 0;
 
-  addr_offset = 7;
+  // Skip application data.
+  addr_offset += sizeof application;
+
+  // Restore settings struct from EEPROM.
+  uint8_t* ptr_settings = (uint8_t*)&settings;
+  for (int i = 0; i < sizeof settings; i++) {
+    ptr_settings[i] = EEPROM.read(addr_offset++);
+  }
+
+  bandIdx     = EEPROM.read(addr_offset++);
+  currentMode = EEPROM.read(addr_offset++);          // G8PTM: Reads stored Mode. Now per mode, leave for compatibility
+  currentBFO  = EEPROM.read(addr_offset++) << 8;      // G8PTN: Reads stored BFO value (HIGH byte)
+  currentBFO |= EEPROM.read(addr_offset++);          // G8PTN: Reads stored BFO value (HIGH byte)
+
   for (int i = 0; i <= lastBand; i++)
   {
-    band[i].currentFreq = EEPROM.read(addr_offset++) << 8;
-    band[i].currentFreq |= EEPROM.read(addr_offset++);
+    band[i].currentFreq    = EEPROM.read(addr_offset++) << 8;
+    band[i].currentFreq   |= EEPROM.read(addr_offset++);
     band[i].currentStepIdx = EEPROM.read(addr_offset++);
-    band[i].bandwidthIdx = EEPROM.read(addr_offset++);
+    band[i].bandwidthIdx   = EEPROM.read(addr_offset++);
   }
 
   // G8PTN: Added
-  addr_offset = eeprom_set_address;
-  currentBrt      = EEPROM.read(addr_offset++);           // Reads stored Brightness value
   FmAgcIdx        = EEPROM.read(addr_offset++);           // Reads stored FM AGC/ATTN index value
   AmAgcIdx        = EEPROM.read(addr_offset++);           // Reads stored AM AGC/ATTN index value
   SsbAgcIdx       = EEPROM.read(addr_offset++);           // Reads stored SSB AGC/ATTN index value
@@ -1003,9 +1056,7 @@ void readAllReceiverInformation()
   SsbAvcIdx       = EEPROM.read(addr_offset++);           // Reads stored SSB AVC index value
   AmSoftMuteIdx   = EEPROM.read(addr_offset++);           // Reads stored AM SoftMute index value
   SsbSoftMuteIdx  = EEPROM.read(addr_offset++);           // Reads stored SSB SoftMute index value
-  currentSleep    = EEPROM.read(addr_offset++);           // Reads stored Sleep value (HIGH byte)
 
-  addr_offset = eeprom_setp_address;
   for (int i = 0; i <= lastBand; i++)
   {
     bandCAL[i]    = EEPROM.read(addr_offset++) << 8;      // Reads stored Calibration value (HIGH byte) per band
@@ -1014,9 +1065,6 @@ void readAllReceiverInformation()
   }
 
   EEPROM.end();
-
-  // G8PTN: Added
-  setBrightness(currentBrt);
 
   currentFrequency = band[bandIdx].currentFreq;
   currentMode = bandMODE[bandIdx];                       // G8PTN: Added to support mode per band
@@ -1063,7 +1111,6 @@ void readAllReceiverInformation()
     sprintf(bfo, "%4.4d", currentBFO);
 
   delay(50);
-  rx.setVolume(volume);
 }
 
 /*
@@ -1216,7 +1263,7 @@ void showSoftMute()
 /* Sets brightness using gamma curve. */
 void setBrightness(uint8_t brt) {
 
-  uint8_t pwm = (uint8_t) (255 * pow(((float) (currentBrt) / BRIGHTNESS_MAX), BRIGHTNESS_GAMMA));
+  uint8_t pwm = (uint8_t) (255 * pow(((float) (brt) / BRIGHTNESS_MAX), BRIGHTNESS_GAMMA));
   ledcWrite(0, pwm);
 
 }
@@ -1818,10 +1865,10 @@ void showSettings() {
 void doCurrentMenuCmd() {
   disableCommands();
   switch (currentMenuCmd) {
-     case MENU_VOLUME:
-      if(muted) {
-        rx.setVolume(mute_vol_val);
-        muted = false;
+    case MENU_VOLUME:
+      if(settings.mute) {
+        rx.setVolume(settings.volume);
+        settings.mute = false;
       }
       cmdVolume = true;
       showVolume();
@@ -1872,13 +1919,15 @@ void doCurrentMenuCmd() {
       drawSprite();
       break;
     case MENU_MUTE:
-      muted=!muted;
-      if (muted)
+      settings.mute = !settings.mute;
+      if (settings.mute)
       {
-        mute_vol_val = rx.getVolume();
+        settings.volume = rx.getVolume();
         rx.setVolume(0);
       }
-      else rx.setVolume(mute_vol_val);
+      else
+        rx.setVolume(settings.volume);
+
       drawSprite();
       break;
 
@@ -2138,13 +2187,13 @@ void drawMenu() {
     if (cmdBrt) {
       spr.setTextColor(0xBEDF,TFT_MENU_BACK);
       spr.fillRoundRect(6+menu_offset_x,24+menu_offset_y+(2*16),66+menu_delta_x,16,2,TFT_MENU_BACK);
-      spr.drawNumber(currentBrt,    38+menu_offset_x+(menu_delta_x/2),60+menu_offset_y,7);
+      spr.drawNumber(settings.brightness,    38+menu_offset_x+(menu_delta_x/2),60+menu_offset_y,7);
     }
 
     if (cmdSleep) {
       spr.setTextColor(0xBEDF,TFT_MENU_BACK);
       spr.fillRoundRect(6+menu_offset_x,24+menu_offset_y+(2*16),66+menu_delta_x,16,2,TFT_MENU_BACK);
-      spr.drawNumber(currentSleep,38+menu_offset_x+(menu_delta_x/2),60+menu_offset_y,7);
+      spr.drawNumber(settings.sleep, 38 + menu_offset_x + menu_delta_x/2, 60 + menu_offset_y, 7);
     }
 
     spr.setTextColor(TFT_WHITE,TFT_BLACK);
@@ -2201,13 +2250,17 @@ void drawAuthors(uint16_t x, uint16_t y) {
 /* Shows general information about device and firmware. */
 void drawAbout(uint16_t x, uint16_t y) {
 
+  char version[] = "Version: 000.00";
+
+  sprintf(version, "Version: %u.%02u", application.version / 100, application.version % 100);
+
   // Uptime: ddddd days, hh:mm
   // Uptime: hh:mm
   // Uptime: mm min
   // Uptime: ss sec
   char uptime[26];
   uint32_t d = clock_seconds;
-  
+
   uint8_t s = d % 60;
   d /= 60;
 
@@ -2233,6 +2286,7 @@ void drawAbout(uint16_t x, uint16_t y) {
 
   char *header = "About";
   char *strings[] = {
+    version,
     "Build time: " __DATE__ " " __TIME__,
     uptime,
     NULL
@@ -2455,16 +2509,16 @@ void drawSprite()
         spr.setTextDatum(MC_DATUM);
       */
 
-      spr.drawString("VOL:",6+menu_offset_x,64+menu_offset_y+(2*16),2);
-      if (muted) {
-        //spr.setTextDatum(MR_DATUM);
-        spr.setTextColor(TFT_WHITE,TFT_RED);
-        spr.drawString("Muted",48+menu_offset_x,64+menu_offset_y+(2*16),2);
-        spr.setTextColor(TFT_WHITE,TFT_BLACK);
+      spr.drawString("VOL:", 6 + menu_offset_x, 64 + menu_offset_y + 2*16, 2);
+      if (settings.mute) {
+        spr.setTextColor(TFT_WHITE, TFT_RED);
+        spr.drawString("Muted", 48 + menu_offset_x, 64 + menu_offset_y + 2*16, 2);
+        spr.setTextColor(TFT_WHITE, TFT_BLACK);
       }
-      else spr.drawNumber(rx.getVolume(),48+menu_offset_x,64+menu_offset_y+(2*16),2);
-      spr.setTextDatum(MC_DATUM);
+      else
+        spr.drawNumber(rx.getVolume(), 48 + menu_offset_x, 64 + menu_offset_y + 2*16, 2);
 
+      spr.setTextDatum(MC_DATUM);
     }
 
     if (bfoOn) {
@@ -2834,16 +2888,16 @@ drawSprite();
 
 void doBrt( uint16_t v ) {
   if (v == 1) {
-    if (currentBrt < BRIGHTNESS_MAX)
-        currentBrt++;
+    if (settings.brightness < BRIGHTNESS_MAX)
+        settings.brightness++;
   }
   else {
-    if (currentBrt > 1)
-        currentBrt--;
+    if (settings.brightness > 1)
+        settings.brightness--;
   }
 
   if (display_on)
-    setBrightness(currentBrt);
+    setBrightness(settings.brightness);
 
   showBrt();
   delay(MIN_ELAPSED_TIME); // waits a little more for releasing the button.
@@ -2859,12 +2913,12 @@ void doAbout( uint16_t v ) {
 }
 
 void doSleep( uint16_t v ) {
-  if ( v == 1) {
-    if (currentSleep < SLEEP_MAX)
-      currentSleep = currentSleep + SLEEP_STEP;
+  if (v == 1) {
+    if (settings.sleep <= SLEEP_MAX - SLEEP_STEP)
+      settings.sleep += SLEEP_STEP;
   } else {
-    if (currentSleep > 0)
-      currentSleep = currentSleep - SLEEP_STEP;
+    if (settings.sleep >= SLEEP_STEP)
+      settings.sleep -= SLEEP_STEP;
   }
 
   showSleep();
@@ -2990,7 +3044,7 @@ void displayOn() {
   tft.writecommand(ST7789_SLPOUT);
   delay(120);
   tft.writecommand(ST7789_DISPON);
-  setBrightness(currentBrt);
+  setBrightness(settings.brightness);
   drawSprite();
 }
 
@@ -3001,7 +3055,7 @@ void loop()
 {
 
   // Check if the encoder has moved.
-  if (encoderCount != 0 && currentSleep && !display_on) {
+  if (encoderCount != 0 && settings.sleep && !display_on) {
     elapsedSleep = millis();
     displayOn();
     encoderCount = 0;
@@ -3167,7 +3221,7 @@ void loop()
       //while (digitalRead(ENCODER_PUSH_BUTTON) == LOW) { }
       countClick++;
       elapsedSleep = millis();
-      if (currentSleep && !display_on) {
+      if (settings.sleep && !display_on) {
         displayOn();
       } else if (cmdMenu) {
         currentMenuCmd = menuIdx;
@@ -3219,8 +3273,8 @@ void loop()
   }
 
   // Disable commands control
-  if (currentSleep && display_on) {
-    if ((millis() - elapsedSleep) > currentSleep * 1000) {
+  if (settings.sleep && display_on) {
+    if ((millis() - elapsedSleep) > settings.sleep * 1000) {
       displayOff();
     }
   }
@@ -3383,7 +3437,7 @@ void loop()
     Serial.print(remote_volume);
 
     Serial.print(", brightness: ");
-    Serial.print(currentBrt);
+    Serial.print(settings.brightness);
 
     /*Serial.print(",");*/
     /*Serial.print(remote_rssi);                  // RSSI*/
