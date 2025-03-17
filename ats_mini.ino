@@ -433,7 +433,6 @@ bool eeprom_wr_flag = false;            // Flag indicating EEPROM write request
 
 // Menu options
 int16_t currentCAL = CALIBRATION_DEFAULT;                 // Calibration offset, +/- 1000Hz in steps of 10Hz
-int8_t currentAVC = AVC_DEFAULT;                 // Selected AVC, range = 12 to 90 in steps of 2
 long elapsedSleep = millis();           // Display sleep timer
 
 
@@ -444,7 +443,7 @@ typedef struct
   bool mute;
   uint8_t brightness;
   uint8_t sleep;
-  uint8_t avc;
+  uint8_t avc;          // Selected AVC, range = 12 to 90 in steps of 2. AVC isn't used in FM mode.
   int16_t calibration;
   uint8_t band;
   uint8_t mode;
@@ -618,8 +617,6 @@ uint16_t currentStepIdx = 1;
 
 const char *bandModeDesc[] = {"FM", "LSB", "USB", "AM"};
 const int lastBandModeDesc = (sizeof bandModeDesc / sizeof(char *)) - 1;
-uint8_t currentMode = FM;
-
 
 /**
  *  Band data structure
@@ -692,10 +689,11 @@ char bufferRdsTime[32];
 uint8_t rssi = 0;
 uint8_t snr = 0;
 
-// SSB Mode detection
+/* Check if SSB Mode is used. */
 bool isSSB()
 {
-    return currentMode > FM && currentMode < AM;    // This allows for adding CW mode as well as LSB/USB if required
+  // This allows for adding CW mode as well as LSB/USB if required.
+  return settings.mode == LSB or settings.mode == USB;
 }
 
 
@@ -720,16 +718,6 @@ int getSteps()
 // Generate last step index
 int getLastStep()
 {
-  // Debug
-  #if DEBUG2_PRINT
-  Serial.print("Info: getLastStep() >>> AmTotalSteps = ");
-  Serial.print(AmTotalSteps);
-  Serial.print(", SsbTotalSteps = ");
-  Serial.print(SsbTotalSteps);
-  Serial.print(", isSSB = ");
-  Serial.println(isSSB());
-  #endif
-
   if (isSSB())
     return AmTotalSteps + SsbTotalSteps - 1;
   else if (bandIdx == LW_BAND_TYPE || bandIdx == MW_BAND_TYPE)    // G8PTN; Added in place of check in doStep() for LW/MW step limit
@@ -747,14 +735,6 @@ TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite spr = TFT_eSprite(&tft);
 
 SI4735 rx;
-
-char fw_ver [25];
-
-// void get_fw_ver() {
-//     uint16_t ver_major = (app_ver / 100);
-//     uint16_t ver_minor = (app_ver % 100);
-//     sprintf(fw_ver, "F/W: v%1.1d.%2.2d %s", ver_major, ver_minor, app_date);
-// }
 
 void setup()
 {
@@ -805,10 +785,6 @@ void setup()
 
     tft.setTextSize(2);
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
-
-    // get_fw_ver();
-    // tft.println(fw_ver);
-    // tft.println();
 
     uint8_t* ptr_application = (uint8_t*)&application;
     application.id = 0;
@@ -973,27 +949,8 @@ void saveAllReceiverInformation()
   }
 
   EEPROM.write(addr_offset++, bandIdx);            // Stores the current band
-  EEPROM.write(addr_offset++, currentMode);        // Stores the current Mode (FM / AM / LSB / USB). Now per mode, leave for compatibility
   EEPROM.write(addr_offset++, currentBFOs >> 8);   // G8PTN: Stores the current BFO % 1000 (HIGH byte)
   EEPROM.write(addr_offset++, currentBFOs & 0XFF); // G8PTN: Stores the current BFO % 1000 (LOW byte)
-
-  // EEPROM.commit();
-
-  // G8PTN: Commented out the assignment
-  // - The line appears to be required to ensure the band[bandIdx].currentFreq = currentFrequency
-  // - Updated main code to ensure that this should occur as required with frequency, band or mode changes
-  // - The EEPROM reset code now calls saveAllReceiverInformation(), which is the correct action, this line
-  //   must be disabled otherwise band[bandIdx].currentFreq = 0 (where bandIdx = 0; by default) on EEPROM reset
-  //band[bandIdx].currentFreq = currentFrequency;
-
-  for (int i = 0; i <= lastBand; i++)
-  {
-    EEPROM.write(addr_offset++, (band[i].currentFreq >> 8));   // Stores the current Frequency HIGH byte for the band
-    EEPROM.write(addr_offset++, (band[i].currentFreq & 0xFF)); // Stores the current Frequency LOW byte for the band
-    EEPROM.write(addr_offset++, band[i].currentStepIdx);       // Stores current step of the band
-    EEPROM.write(addr_offset++, band[i].bandwidthIdx);         // table index (direct position) of bandwidth
-    // EEPROM.commit();
-  }
 
   // G8PTN: Added
   EEPROM.write(addr_offset++, FmAgcIdx);                // Stores the current FM AGC/ATTN index value
@@ -1003,18 +960,19 @@ void saveAllReceiverInformation()
   EEPROM.write(addr_offset++, SsbAvcIdx);               // Stores the current SSB AVC index value
   EEPROM.write(addr_offset++, AmSoftMuteIdx);           // Stores the current AM SoftMute index value
   EEPROM.write(addr_offset++, SsbSoftMuteIdx);          // Stores the current SSB SoftMute index value
-  // EEPROM.commit();
 
   for (int i = 0; i <= lastBand; i++)
   {
+    EEPROM.write(addr_offset++, (band[i].currentFreq >> 8));   // Stores the current Frequency HIGH byte for the band
+    EEPROM.write(addr_offset++, (band[i].currentFreq & 0xFF)); // Stores the current Frequency LOW byte for the band
+    EEPROM.write(addr_offset++, band[i].currentStepIdx);       // Stores current step of the band
+    EEPROM.write(addr_offset++, band[i].bandwidthIdx);         // table index (direct position) of bandwidth
     EEPROM.write(addr_offset++, (bandCAL[i] >> 8));     // Stores the current Calibration value (HIGH byte) for the band
     EEPROM.write(addr_offset++, (bandCAL[i] & 0XFF));   // Stores the current Calibration value (LOW byte) for the band
     EEPROM.write(addr_offset++,  bandMODE[i]);          // Stores the current Mode value for the band
-    // EEPROM.commit();
   }
 
   EEPROM.commit();
-
   EEPROM.end();
 }
 
@@ -1036,17 +994,8 @@ void readAllReceiverInformation()
   }
 
   bandIdx     = EEPROM.read(addr_offset++);
-  currentMode = EEPROM.read(addr_offset++);          // G8PTM: Reads stored Mode. Now per mode, leave for compatibility
   currentBFO  = EEPROM.read(addr_offset++) << 8;      // G8PTN: Reads stored BFO value (HIGH byte)
   currentBFO |= EEPROM.read(addr_offset++);          // G8PTN: Reads stored BFO value (HIGH byte)
-
-  for (int i = 0; i <= lastBand; i++)
-  {
-    band[i].currentFreq    = EEPROM.read(addr_offset++) << 8;
-    band[i].currentFreq   |= EEPROM.read(addr_offset++);
-    band[i].currentStepIdx = EEPROM.read(addr_offset++);
-    band[i].bandwidthIdx   = EEPROM.read(addr_offset++);
-  }
 
   // G8PTN: Added
   FmAgcIdx        = EEPROM.read(addr_offset++);           // Reads stored FM AGC/ATTN index value
@@ -1059,6 +1008,10 @@ void readAllReceiverInformation()
 
   for (int i = 0; i <= lastBand; i++)
   {
+    band[i].currentFreq    = EEPROM.read(addr_offset++) << 8;
+    band[i].currentFreq   |= EEPROM.read(addr_offset++);
+    band[i].currentStepIdx = EEPROM.read(addr_offset++);
+    band[i].bandwidthIdx   = EEPROM.read(addr_offset++);
     bandCAL[i]    = EEPROM.read(addr_offset++) << 8;      // Reads stored Calibration value (HIGH byte) per band
     bandCAL[i]   |= EEPROM.read(addr_offset++);           // Reads stored Calibration value (LOW byte) per band
     bandMODE[i]   = EEPROM.read(addr_offset++);           // Reads stored Mode value per band
@@ -1067,7 +1020,7 @@ void readAllReceiverInformation()
   EEPROM.end();
 
   currentFrequency = band[bandIdx].currentFreq;
-  currentMode = bandMODE[bandIdx];                       // G8PTN: Added to support mode per band
+  settings.mode = bandMODE[bandIdx];                       // G8PTN: Added to support mode per band
 
   if (band[bandIdx].bandType == FM_BAND_TYPE)
   {
@@ -1094,7 +1047,7 @@ void readAllReceiverInformation()
       rx.setSSBSidebandCutoffFilter(1);
       updateBFO();
   }
-  else if (currentMode == AM)
+  else if (settings.mode == AM)
   {
     bwIdxAM = bwIdx;
     rx.setBandwidth(bandwidthAM[bwIdxAM].idx, 1);
@@ -1284,7 +1237,7 @@ void setBand(int8_t up_down)
     bandIdx = (bandIdx > 0) ? (bandIdx - 1) : lastBand;
 
   // G8PTN: Added to support mode per band
-  currentMode = bandMODE[bandIdx];
+  settings.mode = bandMODE[bandIdx];
   if (isSSB())
   {
     if (ssbLoaded == false)
@@ -1317,10 +1270,10 @@ void setBand(int8_t up_down)
  */
 void useBand()
 {
-  currentMode = bandMODE[bandIdx];                  // G8PTN: Added to support mode per band
+  settings.mode = bandMODE[bandIdx];                  // G8PTN: Added to support mode per band
   if (band[bandIdx].bandType == FM_BAND_TYPE)
   {
-    currentMode = FM;
+    settings.mode = FM;
     rx.setTuneFrequencyAntennaCapacitor(0);
     rx.setFM(band[bandIdx].minimumFreq, band[bandIdx].maximumFreq, band[bandIdx].currentFreq, tabFmStep[band[bandIdx].currentStepIdx]);
     rx.setSeekFmLimits(band[bandIdx].minimumFreq, band[bandIdx].maximumFreq);
@@ -1345,7 +1298,7 @@ void useBand()
         band[bandIdx].maximumFreq,
         band[bandIdx].currentFreq,
         0,                                                  // SI4732 step is not used for SSB!
-        currentMode);
+        settings.mode);
 
       rx.setSSBAutomaticVolumeControl(1);                   // G8PTN: Always enabled
       //rx.setSsbSoftMuteMaxAttenuation(softMuteMaxAttIdx); // G8PTN: Commented out
@@ -1356,7 +1309,7 @@ void useBand()
     }
     else
     {
-      currentMode = AM;
+      settings.mode = AM;
       rx.setAM(
         band[bandIdx].minimumFreq,
         band[bandIdx].maximumFreq,
@@ -1384,8 +1337,8 @@ void useBand()
   // This gets disableAgc and agcNdx values based on mode (FM, AM , SSB)
   doAgc(0);
 
-  // Call doAvc(0), 0 = No incr/decr action (eqivalent to getAvc)
-  // This gets currentAVC values based on mode (AM, SSB)
+  // Call doAvc(0), 0 = No incr/decr action (eqivalent to getAvc).
+  // This gets current AVC values based on mode (AM, SSB).
   doAvc(0);
 
   delay(100);
@@ -1395,7 +1348,7 @@ void useBand()
   currentStepIdx = band[bandIdx].currentStepIdx;    // Default. Need to modify for AM/SSB as required
 
 
-  if (currentMode == FM)
+  if (settings.mode == FM)
       idxFmStep = band[bandIdx].currentStepIdx;
   else
   {
@@ -1403,7 +1356,7 @@ void useBand()
     idxAmStep = band[bandIdx].currentStepIdx;
 
 
-    // Update depending on currentMode and currentStepIdx
+    // Update depending on current mode and currentStepIdx
     // If outside SSB step ranges
     if (isSSB() && currentStepIdx >= AmTotalStepsSsb && currentStepIdx <AmTotalSteps)
     {
@@ -1413,7 +1366,7 @@ void useBand()
     }
 
     // If outside AM step ranges
-    if (currentMode == AM && currentStepIdx >= AmTotalSteps)
+    if (settings.mode == AM && currentStepIdx >= AmTotalSteps)
     {
       currentStepIdx = 0;;
       idxAmStep = 0;
@@ -1429,20 +1382,8 @@ void useBand()
       idxAmStep = AmTotalStepsSsb;
   */
 
-  // Debug
-  #if DEBUG2_PRINT
-  Serial.print("Info: useBand() >>> currentStepIdx = ");
-  Serial.print(currentStepIdx);
-  Serial.print(", idxAmStep = ");
-  Serial.print(idxAmStep);
-  Serial.print(", band[bandIdx].currentStepIdx = ");
-  Serial.print(band[bandIdx].currentStepIdx);
-  Serial.print(", currentMode = ");
-  Serial.println(currentMode);
-  #endif
-
   // Store mode
-  bandMODE[bandIdx] = currentMode;               // G8PTN: Added to support mode per band
+  bandMODE[bandIdx] = settings.mode;               // G8PTN: Added to support mode per band
 
   rssi = 0;
   snr = 0;
@@ -1481,7 +1422,7 @@ void doBandwidth(int8_t v)
 
       band[bandIdx].bandwidthIdx = bwIdxSSB;
     }
-    else if (currentMode == AM)
+    else if (settings.mode == AM)
     {
       bwIdxAM = (v == 1) ? bwIdxAM + 1 : bwIdxAM - 1;
 
@@ -1524,7 +1465,7 @@ void showCommandStatus(char * currentCmd)
 void doAgc(int8_t v) {
 
   // G8PTN: Modified to have separate AGC/ATTN per mode (FM, AM, SSB)
-  if (currentMode == FM) {
+  if (settings.mode == FM) {
     if      (v == 1)   FmAgcIdx ++;
     else if (v == -1)  FmAgcIdx --;
 
@@ -1592,7 +1533,7 @@ void doAgc(int8_t v) {
  */
 void doStep(int8_t v)
 {
-    if ( currentMode == FM ) {
+    if (settings.mode == FM) {
       idxFmStep = (v == 1) ? idxFmStep + 1 : idxFmStep - 1;
       if (idxFmStep > lastFmStep)
         idxFmStep = 0;
@@ -1662,12 +1603,12 @@ void doStep(int8_t v)
  */
 void doMode(int8_t v)
 {
-  currentMode = bandMODE[bandIdx];               // G8PTN: Added to support mode per band
+  settings.mode = bandMODE[bandIdx];               // G8PTN: Added to support mode per band
 
-  if (currentMode != FM)                         // Nothing to do if FM mode
+  if (settings.mode != FM)                         // Nothing to do if FM mode
   {
     if (v == 1)  { // clockwise
-      if (currentMode == AM)
+      if (settings.mode == AM)
       {
         // If you were in AM mode, it is necessary to load SSB patch (every time)
         if (display_on) {
@@ -1679,13 +1620,13 @@ void doMode(int8_t v)
 
         loadSSB();
         ssbLoaded = true;
-        currentMode = LSB;
+        settings.mode = LSB;
       }
-      else if (currentMode == LSB)
-        currentMode = USB;
-      else if (currentMode == USB)
+      else if (settings.mode == LSB)
+        settings.mode = USB;
+      else if (settings.mode == USB)
       {
-        currentMode = AM;
+        settings.mode = AM;
         bfoOn = ssbLoaded = false;
 
         // G8PTN: When exiting SSB mode update the current frequency and BFO
@@ -1693,7 +1634,7 @@ void doMode(int8_t v)
         currentBFO = 0;
       }
     } else { // and counterclockwise
-      if (currentMode == AM)
+      if (settings.mode == AM)
       {
         // If you were in AM mode, it is necessary to load SSB patch (every time)
 
@@ -1706,13 +1647,13 @@ void doMode(int8_t v)
 
         loadSSB();
         ssbLoaded = true;
-        currentMode = USB;
+        settings.mode = USB;
       }
-      else if (currentMode == USB)
-        currentMode = LSB;
-      else if (currentMode == LSB)
+      else if (settings.mode == USB)
+        settings.mode = LSB;
+      else if (settings.mode == LSB)
       {
-        currentMode = AM;
+        settings.mode = AM;
         bfoOn = ssbLoaded = false;
 
         // G8PTN: When exiting SSB mode update the current frequency and BFO
@@ -1723,7 +1664,7 @@ void doMode(int8_t v)
 
     band[bandIdx].currentFreq = currentFrequency;
     band[bandIdx].currentStepIdx = currentStepIdx;
-    bandMODE[bandIdx] = currentMode;                      // G8PTN: Added to support mode per band
+    bandMODE[bandIdx] = settings.mode;                      // G8PTN: Added to support mode per band
     useBand();
   }
   delay(MIN_ELAPSED_TIME); // waits a little more for releasing the button.
@@ -1779,7 +1720,7 @@ void doSoftMute(int8_t v)
 {
   // G8PTN: Modified to have separate SoftMute per mode (AM, SSB)
   // Only allow for AM and SSB modes
-  if (currentMode != FM) {
+  if (settings.mode != FM) {
 
     if (isSSB()) {
       if      (v == 1)   SsbSoftMuteIdx ++;
@@ -1899,7 +1840,7 @@ void doCurrentMenuCmd() {
       showAgcAtt();
       break;
     case MENU_SOFTMUTE:
-      if (currentMode != FM) {
+      if (settings.mode != FM) {
         cmdSoftMuteMaxAtt = true;
       }
       showSoftMute();
@@ -1942,7 +1883,7 @@ void doCurrentMenuCmd() {
 
     // G8PTN: Added
     case MENU_AVC:
-      if (currentMode != FM) {
+      if (settings.mode != FM) {
         cmdAvc = true;
       }
       showAvc();
@@ -2018,7 +1959,7 @@ bool isMenuMode() {
 }
 
 uint8_t getStrength() {
-  if (currentMode != FM) {
+  if (settings.mode != FM) {
     //dBuV to S point conversion HF
     if ((rssi >= 0) and (rssi <=  1)) return  1;  // S0
     if ((rssi >  1) and (rssi <=  2)) return  2;  // S1         // G8PTN: Corrected table
@@ -2114,12 +2055,12 @@ void drawMenu() {
       if (i==0) spr.setTextColor(0xBEDF,0x105B);
       else spr.setTextColor(0xBEDF,TFT_MENU_BACK);
       if (cmdMode)
-        if (currentMode == FM) {
-          if (i==0) spr.drawString(bandModeDesc[abs((currentMode+lastBandModeDesc+1+i)%(lastBandModeDesc+1))],38+menu_offset_x+(menu_delta_x/2),64+menu_offset_y+(i*16),2);
+        if (settings.mode == FM) {
+          if (i==0) spr.drawString(bandModeDesc[abs((settings.mode+lastBandModeDesc+1+i)%(lastBandModeDesc+1))],38+menu_offset_x+(menu_delta_x/2),64+menu_offset_y+(i*16),2);
         }
-        else spr.drawString(bandModeDesc[abs((currentMode+lastBandModeDesc+1+i)%(lastBandModeDesc+1))],38+menu_offset_x+(menu_delta_x/2),64+menu_offset_y+(i*16),2);
+        else spr.drawString(bandModeDesc[abs((settings.mode+lastBandModeDesc+1+i)%(lastBandModeDesc+1))],38+menu_offset_x+(menu_delta_x/2),64+menu_offset_y+(i*16),2);
       if (cmdStep)
-        if (currentMode == FM) spr.drawString(FmStepDesc[abs((currentStepIdx+lastFmStep+1+i)%(lastFmStep+1))],38+menu_offset_x+(menu_delta_x/2),64+menu_offset_y+(i*16),2);
+        if (settings.mode == FM) spr.drawString(FmStepDesc[abs((currentStepIdx+lastFmStep+1+i)%(lastFmStep+1))],38+menu_offset_x+(menu_delta_x/2),64+menu_offset_y+(i*16),2);
         else spr.drawString(AmSsbStepDesc[abs((currentStepIdx+temp_LastStep+1+i)%(temp_LastStep+1))],38+menu_offset_x+(menu_delta_x/2),64+menu_offset_y+(i*16),2);
       if (cmdBand) spr.drawString(band[abs((bandIdx+lastBand+1+i)%(lastBand+1))].bandName,38+menu_offset_x+(menu_delta_x/2),64+menu_offset_y+(i*16),2);
       if (cmdBandwidth) {
@@ -2129,7 +2070,7 @@ void drawMenu() {
           // bw = (char *)bandwidthSSB[bwIdxSSB].desc;
           // showBFO();
         }
-        else if (currentMode == AM)
+        else if (settings.mode == AM)
         {
           spr.drawString(bandwidthAM[abs((bwIdxAM+lastBandwidthAM+1+i)%(lastBandwidthAM+1))].desc,38+menu_offset_x+(menu_delta_x/2),64+menu_offset_y+(i*16),2);
         }
@@ -2179,7 +2120,7 @@ void drawMenu() {
       spr.setTextColor(0xBEDF,TFT_MENU_BACK);
       spr.fillRoundRect(6+menu_offset_x,24+menu_offset_y+(2*16),66+menu_delta_x,16,2,TFT_MENU_BACK);
       spr.drawString("Max Gain",38+menu_offset_x+(menu_delta_x/2),32+menu_offset_y,2);
-      spr.drawNumber(currentAVC,38+menu_offset_x+(menu_delta_x/2),60+menu_offset_y,4);
+      spr.drawNumber(settings.avc, 38 + menu_offset_x + menu_delta_x/2, 60 + menu_offset_y, 4);
       spr.drawString("dB",38+menu_offset_x+(menu_delta_x/2),90+menu_offset_y,4);
     }
 
@@ -2258,7 +2199,7 @@ void drawAbout(uint16_t x, uint16_t y) {
   // Uptime: hh:mm
   // Uptime: mm min
   // Uptime: ss sec
-  char uptime[26];
+  char uptime[] = "Uptime: ddddd days, hh:mm";
   uint32_t d = clock_seconds;
 
   uint8_t s = d % 60;
@@ -2327,7 +2268,7 @@ void drawSMeter(uint16_t x, uint16_t y, uint16_t meter_h, uint16_t scale_h) {
 
 /* Returns current frequency (without BFO) in Hz. */
 uint32_t getFrequency(uint16_t f) {
-  if (currentMode == FM)
+  if (settings.mode == FM)
     return f * 10000;
 
   return f * 1000;
@@ -2335,7 +2276,7 @@ uint32_t getFrequency(uint16_t f) {
 
 /* Returns current step in Hz. */
 uint32_t getFrequencyStep() {
-  if (currentMode == FM)
+  if (settings.mode == FM)
     return tabFmStep[currentStepIdx] * 10000;
 
   if (currentStepIdx < AmTotalSteps)
@@ -2399,7 +2340,7 @@ void drawFrequencyScale(
     if( f >= f_min and f <= f_max) {
 
       if((f / step) % 10 == 0) {
-        if (currentMode == FM)
+        if (settings.mode == FM)
           spr.drawFloat(f / 1e6, 1, xx + i*dx , labels_y, 2);
         else if (f % 1000 == 0 and step % 100 == 0)
           spr.drawFloat(f / 1e3, 0, xx + i*dx , labels_y, 2);
@@ -2435,7 +2376,7 @@ void drawSprite()
   } else if (cmdAbout) {
     drawAbout(0, 0);
   } else {
-    if (currentMode == FM) {
+    if (settings.mode == FM) {
       spr.setTextDatum(MR_DATUM);
       spr.drawFloat(currentFrequency/100.00,2,freq_offset_x,freq_offset_y,7);
       spr.setTextDatum(ML_DATUM);
@@ -2473,16 +2414,16 @@ void drawSprite()
       spr.drawString("Band:",6+menu_offset_x,64+menu_offset_y+(-3*16),2);
       spr.drawString(band[bandIdx].bandName,48+menu_offset_x,64+menu_offset_y+(-3*16),2);
       spr.drawString("Mode:",6+menu_offset_x,64+menu_offset_y+(-2*16),2);
-      spr.drawString(bandModeDesc[currentMode],48+menu_offset_x,64+menu_offset_y+(-2*16),2);
+      spr.drawString(bandModeDesc[settings.mode],48+menu_offset_x,64+menu_offset_y+(-2*16),2);
       spr.drawString("Step:",6+menu_offset_x,64+menu_offset_y+(-1*16),2);
-      if (currentMode == FM) spr.drawString(FmStepDesc[currentStepIdx],48+menu_offset_x,64+menu_offset_y+(-1*16),2);
+      if (settings.mode == FM) spr.drawString(FmStepDesc[currentStepIdx],48+menu_offset_x,64+menu_offset_y+(-1*16),2);
       else spr.drawString(AmSsbStepDesc[currentStepIdx],48+menu_offset_x,64+menu_offset_y+(-1*16),2);
       spr.drawString("BW:",6+menu_offset_x,64+menu_offset_y+(0*16),2);
       if (isSSB())
         {
           spr.drawString(bandwidthSSB[bwIdxSSB].desc,48+menu_offset_x,64+menu_offset_y+(0*16),2);
         }
-      else if (currentMode == AM)
+      else if (settings.mode == AM)
         {
           spr.drawString(bandwidthAM[bwIdxAM].desc,48+menu_offset_x,64+menu_offset_y+(0*16),2);
         }
@@ -2533,11 +2474,11 @@ void drawSprite()
 
     drawFrequencyScale(
         VISOR_X, VISOR_Y, VISOR_W, VISOR_H, SCALE_H, SCALE_LONG, SCALE_MEDIUM, SCALE_SHORT,
-        TFT_RED, 0xC638, currentMode == FM ? 100000 : 10000);
+        TFT_RED, 0xC638, settings.mode == FM ? 100000 : 10000);
 
     spr.setTextColor(TFT_WHITE,TFT_BLACK);
 
-    if (currentMode == FM) {
+    if (settings.mode == FM) {
       drawStereoIndicator(MODE_OFFSET_X, MODE_OFFSET_Y, MODE_RADIUS, TFT_RED, TFT_WHITE, rx.getCurrentPilot());
 
       // spr.setTextColor(TFT_MAGENTA,TFT_BLACK);
@@ -2550,7 +2491,7 @@ void drawSprite()
       else {
       spr.fillSmoothRoundRect(1+mode_offset_x,1+mode_offset_y,76,22,4,TFT_WHITE);
       spr.fillSmoothRoundRect(2+mode_offset_x,2+mode_offset_y,74,20,4,TFT_BLACK);
-      spr.drawString(bandModeDesc[currentMode],38+mode_offset_x,11+mode_offset_y,2);
+      spr.drawString(bandModeDesc[settings.mode],38+mode_offset_x,11+mode_offset_y,2);
       }
     */
   }
@@ -2932,7 +2873,7 @@ void showSleep() {
 
 void doAvc(int16_t v) {
   // Only allow for AM and SSB modes
-  if (currentMode != FM) {
+  if (settings.mode != FM) {
 
     if (isSSB()) {
       if      (v == 1)   SsbAvcIdx += 2;
@@ -2945,7 +2886,7 @@ void doAvc(int16_t v) {
         SsbAvcIdx = 12;
 
       // Select
-      currentAVC = SsbAvcIdx;
+      settings.avc = SsbAvcIdx;
     }
 
     else {
@@ -2959,11 +2900,11 @@ void doAvc(int16_t v) {
         AmAvcIdx = 12;
 
       // Select
-      currentAVC = AmAvcIdx;
+      settings.avc = AmAvcIdx;
     }
 
   // Configure SI4732/5
-  rx.setAvcAmMaxGain(currentAVC);
+  rx.setAvcAmMaxGain(settings.avc);
 
   // Only call showAvc() if incr/decr action (allows the doAvc(0) to act as getAvc)
   if (v != 0) showAvc();
@@ -3154,7 +3095,7 @@ void loop()
 #endif
 
       // G8PTN: Used in place of rx.frequencyUp() and rx.frequencyDown()
-      if (currentMode == FM)
+      if (settings.mode == FM)
         currentFrequency += tabFmStep[currentStepIdx] * encoderCount;       // FM Up/Down
       else
         currentFrequency += tabAmStep[currentStepIdx] * encoderCount;       // AM Up/Down
@@ -3165,7 +3106,7 @@ void loop()
 
       // Special case to cover AM frequency negative!
       bool AmFreqNeg = false;
-      if ((currentMode == AM) && (currentFrequency & 0x8000))
+      if ((settings.mode == AM) && (currentFrequency & 0x8000))
         AmFreqNeg = true;
 
       // Priority to minimum check to cover AM frequency negative
@@ -3187,7 +3128,7 @@ void loop()
       }
       */
 
-      if (currentMode == FM) cleanBfoRdsInfo();
+      if (settings.mode == FM) cleanBfoRdsInfo();
       // Show the current frequency only if it has changed
       currentFrequency = rx.getFrequency();
       band[bandIdx].currentFreq = currentFrequency;            // G8PTN: Added to ensure update of currentFreq in table for AM/FM
@@ -3339,7 +3280,7 @@ void loop()
   }
 
   if ((millis() - lastRDSCheck) > RDS_CHECK_TIME) {
-    if ((currentMode == FM) and (snr >= 12)) checkRDS();
+    if ((settings.mode == FM) and (snr >= 12)) checkRDS();
     lastRDSCheck = millis();
   }
 
@@ -3406,11 +3347,11 @@ void loop()
     // Remote serial
     Serial.print(band[bandIdx].bandName);
     Serial.print(" (");
-    Serial.print(bandModeDesc[currentMode]);
+    Serial.print(bandModeDesc[settings.mode]);
     Serial.print(") freq: ");
     Serial.print(getFrequency(currentFrequency) + currentBFO);
     Serial.print("Hz, step:");
-    Serial.print(currentMode == FM ? FmStepDesc[currentStepIdx] : AmSsbStepDesc[currentStepIdx]);
+    Serial.print(settings.mode == FM ? FmStepDesc[currentStepIdx] : AmSsbStepDesc[currentStepIdx]);
 
     /*Serial.print(",");*/
     /*Serial.print(bwIdxFM);                      // Bandwidth (FM)*/
