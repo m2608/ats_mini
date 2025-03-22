@@ -178,12 +178,6 @@
 // BFO Menu option
 #define BFO_MENU_EN 0         // Allows BFO menu option for debug
 
-// Serial.print control
-#define DEBUG1_PRINT 0        // Highest level - Primary information
-#define DEBUG2_PRINT 0        //               - Function call results
-#define DEBUG3_PRINT 0        //               - Misc
-#define DEBUG4_PRINT 0        // Lowest level  - EEPROM
-
 // Remote Control
 #define USE_REMOTE 0          // Allows basic serial control and monitoring
 
@@ -844,25 +838,6 @@ void setup()
   // After the SI4732 has been setup, enable the audio amplifier
   digitalWrite(PIN_AMP_EN, HIGH);
 
-  // Checking the EEPROM content
-  // Checks app_id (which covers manual reset) and app_ver which allows for automatic reset
-  // The app_ver is equivalent to a F/W version.
-
-  // Debug
-  // Read all EEPROM locations
-  #if DEBUG4_PRINT
-  EEPROM.begin(EEPROM_SIZE);
-  Serial.println("**** EEPROM READ: Pre Check");
-  for (int i = 0; i <= (EEPROM_SIZE - 1); i++){
-    Serial.print(EEPROM.read(i));
-    delay(10);
-    Serial.print("\t");
-    if (i%16 == 15) Serial.println();
-  }
-  Serial.println("****");
-  EEPROM.end();
-  #endif
-
   Application app_eeprom;
 
   EEPROM.begin(EEPROM_SIZE);
@@ -881,21 +856,6 @@ void setup()
 
   rx.setVolume(settings.mute ? 0 : settings.volume);
   setBrightness(settings.brightness);
-
-  // Debug
-  // Read all EEPROM locations
-  #if DEBUG4_PRINT
-  EEPROM.begin(EEPROM_SIZE);
-  Serial.println("**** START READ: Post check actions");
-  for (int i = 0; i <= (EEPROM_SIZE - 1); i++){
-    Serial.print(EEPROM.read(i));
-    delay(10);
-    Serial.print("\t");
-    if (i%16 == 15) Serial.println();
-  }
-  Serial.println("****");
-  EEPROM.end();
-  #endif
 
   // ** SI4732 STARTUP **
   // Uses values from EEPROM (Last stored or defaults after EEPROM reset)
@@ -1591,15 +1551,6 @@ void doStep(int8_t v)
       //rx.setFrequencyStep(tabAmStep[currentStepIdx]);
       rx.setSeekAmSpacing(5); // Max 10kHz for spacing
     }
-
-    // Debug
-    #if DEBUG2_PRINT
-    int temp_LastStep = getLastStep();
-    Serial.print("Info: doStep() >>> currentStepIdx = ");
-    Serial.print(currentStepIdx);
-    Serial.print(", getLastStep() = ");
-    Serial.println(temp_LastStep);
-    #endif
 
     band[settings.band].currentStepIdx = currentStepIdx;
     showStep();
@@ -2586,7 +2537,7 @@ float getBatteryVoltage() {
 
    Params:
 
-   - `x`, `y`  - coords of top level corner of battery outline 
+   - `x`, `y`  - coords of top level corner of battery outline
    - `w`, `h`  - width and height of battery outline
    - `p`       - padding between outer and inner part
    - `charge`  - charge level 0..1
@@ -2718,19 +2669,6 @@ void doFrequencyTuneSSB()
     }
 
     band[settings.band].currentFreq = currentFrequency + (currentBFO / 1000);     // Update band table currentFreq
-
-    //g_lastFreqChange = millis();
-    //g_previousFrequency = 0; //Force EEPROM update
-    if (clampSSBBand()) {
-      // Clamp frequency to band limits                  // Automatically done by function call
-      //showFrequency();                                 // This action is not required
-
-      // Debug
-      #if DEBUG1_PRINT
-      Serial.println("Info: clampSSBBand() >>> SSB Band Clamp !");
-      #endif
-    }
-
 }
 
 // Clamp SSB tuning to band limits
@@ -2774,17 +2712,6 @@ void updateBFO()
     // To move frequency forward, need to move the BFO backwards, so multiply by -1
     currentCAL = bandCAL[settings.band];    // Select from table
     rx.setSSBBfo((currentBFO + currentCAL) * -1);
-
-    // Debug
-    #if DEBUG2_PRINT
-    Serial.print("Info: updateBFO() >>> ");
-    Serial.print("currentBFO = ");
-    Serial.print(currentBFO);
-    Serial.print(", currentCAL = ");
-    Serial.print(currentCAL);
-    Serial.print(", rx.setSSBbfo() = ");
-    Serial.println((currentBFO + currentCAL) * -1);
-    #endif
 }
 
 
@@ -2921,30 +2848,16 @@ void button_check() {
 
     if ((millis() - pb1_edge_time) > 100) {
       if (pb1_stable == HIGH && pb1_last == LOW) {       // button is pressed
-        // Debug
-        #if DEBUG2_PRINT
-        Serial.println("Info: button_check() >>> Button Pressed");
-        #endif
         pb1_pressed_time = pb1_edge_time;
         pb1_stable = pb1_current;
       } else if (pb1_stable == LOW && pb1_last == HIGH) {       // button is released
-        // Debug
-        #if DEBUG2_PRINT
-        Serial.println("Info: button_check() >>> Button Released");
-        #endif
         pb1_released_time = pb1_edge_time;
         pb1_stable = pb1_current;
         long pb1_press_duration = pb1_released_time - pb1_pressed_time;
         if (pb1_press_duration < 500) {
           pb1_pressed = true;
-          #if DEBUG2_PRINT
-          Serial.println("Info: button_check() >>> Short Press triggered");
-          #endif
         } else {
           pb1_long_pressed = true;
-          #if DEBUG2_PRINT
-          Serial.println("Info: button_check() >>> Long Press triggered");
-          #endif
         }
       }
     }
@@ -3042,28 +2955,10 @@ void loop()
       // Tuning timer to hold off (SSB) display updates
       tuning_flag = true;
       tuning_timer = millis();
-      #if DEBUG3_PRINT
-      Serial.print("Info: TUNE_HOLDOFF SSB (Set) >>> ");
-      Serial.print("tuning_flag = ");
-      Serial.print(tuning_flag);
-      Serial.print(", millis = ");
-      Serial.println(millis());
-      #endif
 #endif
 
       doFrequencyTuneSSB();
       currentFrequency = rx.getFrequency();
-
-      // Debug
-      #if DEBUG1_PRINT
-      Serial.print("Info: SSB >>> ");
-      Serial.print("currentFrequency = ");
-      Serial.print(currentFrequency);
-      Serial.print(", currentBFO = ");
-      Serial.print(currentBFO);
-      Serial.print(", rx.setSSBbfo() = ");
-      Serial.println((currentBFO + currentCAL) * -1);
-      #endif
 
       showFrequency();
     }
@@ -3120,16 +3015,6 @@ void loop()
       // Show the current frequency only if it has changed
       currentFrequency = rx.getFrequency();
       band[settings.band].currentFreq = currentFrequency;            // G8PTN: Added to ensure update of currentFreq in table for AM/FM
-
-      // Debug
-      #if DEBUG1_PRINT
-      Serial.print("Info: AM/FM >>> currentFrequency = ");
-      Serial.print(currentFrequency);
-      Serial.print(", currentBFO = ");
-      Serial.println(currentBFO);                              // Print to check the currentBFO value
-      //Serial.print(", rx.setSSBbfo() = ");                   // rx.setSSBbfo() will not have been written
-      //Serial.println((currentBFO + currentCAL) * -1);        // rx.setSSBbfo() will not have been written
-      #endif
 
       showFrequency();
     }
@@ -3211,29 +3096,13 @@ void loop()
   // Show RSSI status only if this condition has changed
   if ((millis() - elapsedRSSI) > MIN_ELAPSED_RSSI_TIME * 6)
   {
-    // Debug
-    #if DEBUG3_PRINT
-    Serial.println("Info: loop() >>> Checking signal information");
-    #endif
-
     rx.getCurrentReceivedSignalQuality();
     snr= rx.getCurrentSNR();
     int aux = rx.getCurrentRSSI();
 
-    // Debug
-    #if DEBUG3_PRINT
-    Serial.print("Info: loop() >>> RSSI = ");
-    Serial.println(rssi);
-    #endif
-
     //if (rssi != aux && !isMenuMode())
     if (rssi != aux)                            // G8PTN: Based on 1.2s update, always allow S-Meter
     {
-      // Debug
-      #if DEBUG3_PRINT
-      Serial.println("Info: loop() >>> RSI diff detected");
-      #endif
-
       rssi = aux;
       showRSSI();
     }
@@ -3300,13 +3169,6 @@ void loop()
     if ((millis() - tuning_timer) > TUNE_HOLDOFF_TIME) {
       tuning_flag = false;
       showFrequency();
-      #if DEBUG3_PRINT
-      Serial.print("Info: TUNE_HOLDOFF FM/AM (Reset) >>> ");
-      Serial.print("tuning_flag = ");
-      Serial.print(tuning_flag);
-      Serial.print(", millis = ");
-      Serial.println(millis());
-      #endif
     }
   }
 #endif
