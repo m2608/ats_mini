@@ -185,7 +185,7 @@
 // Display position control
 
 // Screen size.
-#define SCREEN_WITDH              320
+#define SCREEN_WIDTH              320
 #define SCREEN_HEIGHT             170
 
 // Added during development, code could be replaced with fixed values
@@ -751,7 +751,7 @@ SI4735 rx;
 void drawAlarmMessage(char* message) {
   spr.fillSprite(TFT_BLACK);
   spr.setTextColor(TFT_WHITE, TFT_RED);
-  spr.drawString(message, SCREEN_WITDH / 2, SCREEN_HEIGHT / 2, 4);
+  spr.drawString(message, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, 4);
   spr.pushSprite(0, 0);
 }
 
@@ -817,7 +817,7 @@ void setup()
   tft.setRotation(3);
   tft.fillScreen(TFT_BLACK);
 
-  spr.createSprite(SCREEN_WITDH, SCREEN_HEIGHT);
+  spr.createSprite(SCREEN_WIDTH, SCREEN_HEIGHT);
   spr.setTextDatum(MC_DATUM);
   spr.setSwapBytes(true);
   spr.setFreeFont(&Orbitron_Light_24);
@@ -2335,18 +2335,24 @@ void drawFrequencyScale(
 
       if((f / step) % 10 == 0) {
         if (settings.mode == FM)
-          spr.drawFloat(f / 1e6, 1, xx + i*dx , labels_y, 2);
+          spr.drawFloat(f / 1e6, 1, xx, labels_y, 2);
         else if (f % 1000 == 0 and step % 100 == 0)
-          spr.drawFloat(f / 1e3, 0, xx + i*dx , labels_y, 2);
+          spr.drawFloat(f / 1e3, 0, xx, labels_y, 2);
         else
-          spr.drawFloat(f / 1e3, 2, xx + i*dx , labels_y, 2);
+          spr.drawFloat(f / 1e3, 2, xx, labels_y, 2);
+      }
 
-        spr.drawRect(xx + i*dx , yy - lh, 2, lh, scale_color);
-      } else if((f / step) % 5 == 0)
-        spr.drawRect(xx + i*dx , yy - mh, 2, mh, scale_color);
-      else
-        spr.drawLine(xx + i*dx  + 1, yy, xx + i*dx  + 1, yy - sh, scale_color);
+      // Only draw scale lines if they are not out of the screen.
+      if (-1 <= xx and xx < SCREEN_WIDTH) {
+        if((f / step) % 10 == 0)
+          spr.drawRect(xx, yy - lh, 2, lh, scale_color);
+        else if((f / step) % 5 == 0)
+          spr.drawRect(xx, yy - mh, 2, mh, scale_color);
+        else
+          spr.drawLine(xx + 1, yy, xx  + 1, yy - sh, scale_color);
+      }
     }
+    xx += dx;
     f += step;
   }
 
