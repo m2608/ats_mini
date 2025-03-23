@@ -156,19 +156,17 @@
 #define AUDIO_MUTE     3            // GPIO3    Hardware L/R mute, controlled via SI4735 code (1 = Mute)
 #define PIN_AMP_EN    10            // GPIO10   Hardware Audio Amplifer enable (1 = Enable)
 
-// Display PINs
-// All other pins are defined by the TFT_eSPI library
+// Display PINs. All other pins are defined by the TFT_eSPI library
 // Ref: User_Setup_Select.h
-#define PIN_LCD_BL    38            // GPIO38   LCD backlight (PWM brightness control)
+#define PIN_LCD_BL          38
 
 // Rotary Enconder PINs
-#define ENCODER_PIN_A  2            // GPIO02
-#define ENCODER_PIN_B  1            // GPIO01
-#define ENCODER_PUSH_BUTTON 21      // GPIO21
+#define ENCODER_PIN_A        2
+#define ENCODER_PIN_B        1
+#define ENCODER_PUSH_BUTTON 21
 
 // Battery Monitor PIN
-#define VBAT_MON  4                 // GPIO04
-
+#define VBAT_MON             4
 
 // =================================
 // COMPILE CONSTANTS
@@ -185,6 +183,11 @@
 #define TUNE_HOLDOFF 1        // Whilst tuning holds off display update
 
 // Display position control
+
+// Screen size.
+#define SCREEN_WITDH              320
+#define SCREEN_HEIGHT             170
+
 // Added during development, code could be replaced with fixed values
 #define menu_offset_x               0    // Menu horizontal offset
 #define menu_offset_y               0    // Menu vertical offset
@@ -209,11 +212,19 @@
 #define rds_offset_x               10    // RDS horizontal offset
 #define rds_offset_y              158    // RDS vertical offset
 
-#define BATT_OFFSET_X             288
-#define BATT_OFFSET_Y               4
+// Battery icon placement on main screen.
 #define BATT_WIDTH                 24
 #define BATT_HEIGHT                14
 #define BATT_INNER_PADDING          3    // Padding between outer and internal part of icon.
+#define BATT_OFFSET_X             288
+#define BATT_OFFSET_Y               4
+
+// Battery icon placement when there is no charge left.
+#define BATT_NOCHARGE_X           138
+#define BATT_NOCHARGE_Y            57
+#define BATT_NOCHARGE_WIDTH        96
+#define BATT_NOCHARGE_HEIGHT       56
+#define BATT_NOCHARGE_PADDING      15
 
 // Right bottom corner of voltage string.
 #define VOLT_OFFSET_X             284
@@ -736,6 +747,48 @@ TFT_eSprite spr = TFT_eSprite(&tft);
 
 SI4735 rx;
 
+/* Draws alarm message (low battery, eeprom reset etc). */
+void drawAlarmMessage(char* message) {
+  spr.fillSprite(TFT_BLACK);
+  spr.setTextColor(TFT_WHITE, TFT_RED);
+  spr.drawString(message, SCREEN_WITDH / 2, SCREEN_HEIGHT / 2, 4);
+  spr.pushSprite(0, 0);
+}
+
+/* Checks if battery voltage is too low. */
+void checkLowBattery(float v) {
+  if (v < BATT_CUTOFF_VOLTAGE) {
+
+    char low_voltage[(sizeof "LOW VOLTAGE: 0.00 V") + 1];
+    sprintf(low_voltage, "LOW VOLTAGE: %.2f V", v);
+    drawAlarmMessage(low_voltage);
+    delay(2000);
+
+    esp_deep_sleep_start();
+  }
+}
+
+/* Resets EEPROM if encoder button is pressed. */
+void resetEEPROM() {
+
+  EEPROM.begin(EEPROM_SIZE);
+
+  // Check if encoder button is pressed.
+  if (digitalRead(ENCODER_PUSH_BUTTON) == LOW) {
+    // Indirectly forces the reset by setting app_id = 0 (Detected in the subsequent check for app_id and app_ver).
+    uint8_t* ptr_application = (uint8_t*)&application;
+    application.id = 0;
+    for (int addr = 0; addr < sizeof application; addr++) {
+        EEPROM.write(addr, ptr_application[addr]);
+    }
+
+    EEPROM.commit();
+    drawAlarmMessage("EEPROM Resetting");
+    delay(2000);
+  }
+  EEPROM.end();
+}
+
 void setup()
 {
 
@@ -763,11 +816,11 @@ void setup()
   tft.begin();
   tft.setRotation(3);
   tft.fillScreen(TFT_BLACK);
-  spr.createSprite(320,170);
+
+  spr.createSprite(SCREEN_WITDH, SCREEN_HEIGHT);
   spr.setTextDatum(MC_DATUM);
   spr.setSwapBytes(true);
   spr.setFreeFont(&Orbitron_Light_24);
-  spr.setTextColor(TFT_WHITE,TFT_BLACK);
 
   // TFT display brightness control (PWM)
   // Note: At brightness levels below 100%, switching from the PWM may cause power spikes and/or RFI
@@ -775,31 +828,10 @@ void setup()
   ledcAttachPin(PIN_LCD_BL, 0);     // Pin assignment
   setBrightness(settings.brightness);
 
-  // EEPROM
-  // Note: Use EEPROM.begin(EEPROM_SIZE) before use and EEPROM.begin.end after use to free up memory and avoid memory leaks
-  EEPROM.begin(EEPROM_SIZE);
+  checkLowBattery(getBatteryVoltage());
+  resetEEPROM();
 
-  // Press and hold Encoder button to force an EEPROM reset
-  // Indirectly forces the reset by setting app_id = 0 (Detected in the subsequent check for app_id and app_ver)
-  // Note: EEPROM reset is recommended after firmware updates
-  if (digitalRead(ENCODER_PUSH_BUTTON) == LOW) {
-
-    tft.setTextSize(2);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-
-    uint8_t* ptr_application = (uint8_t*)&application;
-    application.id = 0;
-    for (int addr = 0; addr < sizeof application; addr++) {
-        EEPROM.write(addr, ptr_application[addr]);
-    }
-
-    EEPROM.commit();
-    tft.setTextColor(TFT_RED, TFT_BLACK);
-    tft.print("EEPROM Resetting");
-    delay(2000);
-  }
-
-  EEPROM.end();
+  spr.setTextColor(TFT_WHITE, TFT_BLACK);
 
   // G8PTN: Moved this to later, to avoid interrupt action
   /*
@@ -854,8 +886,8 @@ void setup()
   else
     saveAllReceiverInformation();
 
-  rx.setVolume(settings.mute ? 0 : settings.volume);
   setBrightness(settings.brightness);
+  rx.setVolume(settings.mute ? 0 : settings.volume);
 
   // ** SI4732 STARTUP **
   // Uses values from EEPROM (Last stored or defaults after EEPROM reset)
@@ -1186,7 +1218,6 @@ void setBrightness(uint8_t brt) {
 
   uint8_t pwm = (uint8_t) (255 * pow(((float) (brt) / BRIGHTNESS_MAX), BRIGHTNESS_GAMMA));
   ledcWrite(0, pwm);
-
 }
 
 /**
@@ -2608,25 +2639,27 @@ void drawBatteryPercent(uint16_t x, uint16_t y, float percent, bool charging) {
 ***************************************************************************************/
 void batteryMonitor() {
 
-  // Calculated average voltage with correction factor
-  float voltage = getBatteryVoltage();
+  // Calculated average v with correction factor
+  float v = getBatteryVoltage();
+
+  checkLowBattery(v);
 
   if (!display_on)
     return;
 
   // Reset battery charge value in charging state.
   // Battery charge could only go down without charging.
-  if (voltage > BATT_CHARGING_VOLTAGE)
+  if (v > BATT_CHARGING_VOLTAGE)
     charge = 100.0;
   else
-    charge = min(charge, batteryPercent(batteryApprox, voltage));
+    charge = min(charge, batteryPercent(batteryApprox, v));
 
   drawBatteryIcon(BATT_OFFSET_X, BATT_OFFSET_Y, BATT_WIDTH, BATT_HEIGHT,
                   BATT_INNER_PADDING, charge / 100.0, charge < 25 ? TFT_RED : TFT_GREEN);
 
   // The hardware has a load sharing circuit to allow simultaneous charge and power.
-  // With USB(5V) connected the voltage reading will be approx. VBUS - Diode Drop = 4.65V.
-  drawBatteryPercent(VOLT_OFFSET_X, VOLT_OFFSET_Y, charge, voltage > BATT_CHARGING_VOLTAGE);
+  // With USB(5V) connected the v reading will be approx. VBUS - Diode Drop = 4.65V.
+  drawBatteryPercent(VOLT_OFFSET_X, VOLT_OFFSET_Y, charge, v > BATT_CHARGING_VOLTAGE);
 }
 
 
@@ -2887,7 +2920,6 @@ void displayOn() {
   delay(120);
   tft.writecommand(ST7789_DISPON);
   setBrightness(settings.brightness);
-  drawSprite();
 }
 
 /**
